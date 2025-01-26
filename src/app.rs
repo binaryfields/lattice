@@ -5,14 +5,15 @@ use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use tray_icon::menu::MenuEvent;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::WindowId as WinitWindowId;
 
 use crate::action::Action;
 use crate::config::Config;
 use crate::engine::{Engine, Snapshot};
 use crate::hotkey::Hotkeys;
-use crate::macos;
+use crate::macos::{self, SweepEvent};
+use crate::sweep;
 use crate::tray;
 
 const CONFIG_POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -33,7 +34,7 @@ pub fn run() {
         let _ = proxy.send_event(UserEvent::Menu(event));
     }));
 
-    let mut app = App::new(config_path());
+    let mut app = App::new(config_path(), event_loop.create_proxy());
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("lattice: event loop error: {err}");
     }
@@ -47,12 +48,15 @@ struct App {
     hotkeys: Option<Hotkeys>,
     hotkey_failures: Vec<String>,
     tray: Option<tray::Tray>,
+    sweep_monitor: Option<macos::SweepMonitor>,
+    sweep: Option<sweep::Session<macos::AxWindow>>,
+    proxy: EventLoopProxy<UserEvent>,
     trusted: bool,
     initialized: bool,
 }
 
 impl App {
-    fn new(config_path: PathBuf) -> App {
+    fn new(config_path: PathBuf, proxy: EventLoopProxy<UserEvent>) -> App {
         App {
             engine: Engine::new(Config::default()),
             config_path,
@@ -61,6 +65,9 @@ impl App {
             hotkeys: None,
             hotkey_failures: Vec::new(),
             tray: None,
+            sweep_monitor: None,
+            sweep: None,
+            proxy,
             trusted: false,
             initialized: false,
         }
@@ -77,6 +84,15 @@ impl App {
         self.hotkeys = Hotkeys::new();
         self.bind_hotkeys();
         self.tray = tray::Tray::new(self.engine.config(), &self.status());
+        let sweep = &self.engine.config().sweep;
+        let proxy = self.proxy.clone();
+        self.sweep_monitor = macos::SweepMonitor::install(
+            sweep.modifier,
+            sweep.enabled,
+            Box::new(move |event| {
+                let _ = proxy.send_event(UserEvent::Sweep(event));
+            }),
+        );
     }
 
     fn load_config(&mut self) {
@@ -114,6 +130,11 @@ impl App {
         self.load_config();
         self.bind_hotkeys();
         self.update_tray();
+        if let Some(monitor) = &self.sweep_monitor {
+            let sweep = &self.engine.config().sweep;
+            monitor.set_config(sweep.modifier, sweep.enabled);
+        }
+        self.sweep = None;
         if self.config_error.is_none() {
             eprintln!("lattice: config reloaded");
         }
@@ -193,6 +214,64 @@ impl App {
         }
     }
 
+    fn handle_sweep(&mut self, event: SweepEvent) {
+        match event {
+            SweepEvent::Armed { x, y } => self.arm_sweep(x, y),
+            SweepEvent::Moved { .. } => {}
+            SweepEvent::Released { x, y } => self.commit_sweep(x, y),
+        }
+    }
+
+    fn arm_sweep(&mut self, x: f64, y: f64) {
+        self.sweep = None;
+        if !self.trusted {
+            self.trusted = macos::is_trusted();
+            if !self.trusted {
+                return;
+            }
+            self.update_tray();
+        }
+        let Some(window) = macos::window_at(x, y) else {
+            return;
+        };
+        if window.is_fullscreen() || !window.is_resizable() {
+            return;
+        }
+        let Some(frame) = window.frame() else {
+            return;
+        };
+        let visible_frames = macos::visible_frames();
+        if visible_frames.is_empty() {
+            return;
+        }
+        let id = window.id();
+        self.sweep = Some(sweep::Session::begin(
+            window,
+            id,
+            (x, y),
+            Snapshot {
+                window: frame,
+                visible_frames,
+            },
+        ));
+    }
+
+    fn commit_sweep(&mut self, x: f64, y: f64) {
+        let Some(session) = self.sweep.take() else {
+            return;
+        };
+        let Some(action) = session.commit((x, y), &self.engine.config().sweep) else {
+            return;
+        };
+        let Some(target) = self.engine.place(session.id(), action, session.snapshot()) else {
+            return;
+        };
+        if session.window().set_frame(&target).is_none() {
+            eprintln!("lattice: failed to apply swept frame for {action:?}");
+        }
+        session.window().raise();
+    }
+
     fn status(&self) -> tray::Status<'_> {
         tray::Status {
             trusted: self.trusted,
@@ -239,6 +318,7 @@ impl ApplicationHandler<UserEvent> for App {
                 let id = menu.id().0.clone();
                 self.handle_menu(event_loop, &id);
             }
+            UserEvent::Sweep(event) => self.handle_sweep(event),
         }
     }
 
@@ -258,6 +338,7 @@ impl ApplicationHandler<UserEvent> for App {
 pub enum UserEvent {
     Hotkey(GlobalHotKeyEvent),
     Menu(MenuEvent),
+    Sweep(SweepEvent),
 }
 
 fn config_path() -> PathBuf {

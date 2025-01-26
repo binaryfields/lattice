@@ -1,7 +1,9 @@
 mod ax;
+mod mouse;
 mod shell;
 
 pub use ax::*;
+pub use mouse::*;
 pub use shell::*;
 
 use objc2::MainThreadMarker;

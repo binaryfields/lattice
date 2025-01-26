@@ -2,12 +2,13 @@ use std::process::Command;
 use std::ptr::NonNull;
 
 use objc2::rc::Retained;
-use objc2_app_kit::NSWorkspace;
+use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
 use objc2_application_services::{
     AXError, AXIsProcessTrustedWithOptions, AXUIElement, AXValue, AXValueType,
 };
 use objc2_core_foundation::{
-    CFBoolean, CFDictionary, CFHash, CFRetained, CFString, CFType, CGPoint, CGSize,
+    CFBoolean, CFDictionary, CFEqual, CFHash, CFRetained, CFString, CFType, CGPoint, CGSize,
+    kCFBooleanTrue,
 };
 use objc2_foundation::{NSDictionary, NSNumber, NSString};
 
@@ -39,6 +40,24 @@ pub fn focused_window() -> Option<AxWindow> {
         Some(unsafe { AXUIElement::new_application(front.processIdentifier()) })
     })?;
     copy_element(&app, &cfstr("AXFocusedWindow")).map(AxWindow)
+}
+
+pub fn window_at(x: f64, y: f64) -> Option<AxWindow> {
+    let system = unsafe { AXUIElement::new_system_wide() };
+    let mut raw: *const AXUIElement = std::ptr::null();
+    let err =
+        unsafe { system.copy_element_at_position(x as f32, y as f32, NonNull::from(&mut raw)) };
+    if err != AXError::Success {
+        return None;
+    }
+    let element: CFRetained<AXUIElement> =
+        NonNull::new(raw.cast_mut()).map(|p| unsafe { CFRetained::from_raw(p) })?;
+    let is_window = copy_attribute(&element, &cfstr("AXRole"))
+        .is_some_and(|role| CFEqual(Some(&role), Some(&cfstr("AXWindow"))));
+    if is_window {
+        return Some(AxWindow(element));
+    }
+    copy_element(&element, &cfstr("AXWindow")).map(AxWindow)
 }
 
 pub struct AxWindow(CFRetained<AXUIElement>);
@@ -99,6 +118,21 @@ impl AxWindow {
                 .set_attribute_value(&cfstr("AXPosition"), &point_value);
         }
         self.frame()
+    }
+
+    pub fn raise(&self) {
+        unsafe {
+            if let Some(truth) = kCFBooleanTrue {
+                self.0.set_attribute_value(&cfstr("AXMain"), truth);
+            }
+            self.0.perform_action(&cfstr("AXRaise"));
+        }
+        let mut pid: i32 = 0;
+        unsafe { self.0.pid(NonNull::from(&mut pid)) };
+        if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) {
+            #[allow(deprecated)]
+            app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
+        }
     }
 }
 

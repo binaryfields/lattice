@@ -5,6 +5,11 @@
 outer = 5            # screen edge <-> window, points
 inner = 5            # window <-> window at shared edges, points
 
+[sweep]
+enabled = true
+distance = 60          # pt the cursor must travel before release snaps
+modifier = "ctrl+cmd"  # hover a window, hold, sweep, release to snap
+
 [keys]
 # Any action omitted keeps its default; "" unbinds it. Defaults:
 left-half = "ctrl+alt+left"

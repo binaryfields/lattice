@@ -6,6 +6,7 @@ mod geometry;
 mod hotkey;
 mod layout;
 mod macos;
+mod sweep;
 mod tray;
 
 fn main() {

@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 use std::str::FromStr;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::action::Action;
 use crate::layout::Gaps;
@@ -11,6 +11,7 @@ use crate::layout::Gaps;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     pub gaps: Gaps,
+    pub sweep: Sweep,
     pub bindings: Vec<(Action, KeyCombo)>,
 }
 
@@ -27,6 +28,7 @@ impl Config {
         let wire: Wire = toml::from_str(text).map_err(|e| e.to_string())?;
         let mut config = Config {
             gaps: wire.gaps,
+            sweep: wire.sweep,
             bindings: default_bindings(),
         };
         config.apply_keys(&wire.keys)?;
@@ -72,6 +74,12 @@ impl Config {
         if self.gaps.outer < 0.0 || self.gaps.inner < 0.0 {
             return Err("gaps must be >= 0".into());
         }
+        if self.sweep.distance <= 0.0 {
+            return Err("sweep.distance must be > 0".into());
+        }
+        if self.sweep.modifier == Modifiers::default() {
+            return Err("sweep.modifier must name at least one modifier".into());
+        }
         Ok(())
     }
 }
@@ -80,7 +88,31 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             gaps: Gaps::default(),
+            sweep: Sweep::default(),
             bindings: default_bindings(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Sweep {
+    pub enabled: bool,
+    pub distance: f64,
+    #[serde(deserialize_with = "deserialize_modifiers")]
+    pub modifier: Modifiers,
+}
+
+impl Default for Sweep {
+    fn default() -> Self {
+        Sweep {
+            enabled: true,
+            distance: 60.0,
+            modifier: Modifiers {
+                ctrl: true,
+                cmd: true,
+                ..Modifiers::default()
+            },
         }
     }
 }
@@ -219,6 +251,19 @@ impl fmt::Display for Modifiers {
     }
 }
 
+impl FromStr for Modifiers {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut modifiers = Modifiers::default();
+        for part in s.split('+').map(str::trim).filter(|p| !p.is_empty()) {
+            add_modifier(&mut modifiers, part)
+                .ok_or_else(|| format!("unknown modifier {part:?}"))?;
+        }
+        Ok(modifiers)
+    }
+}
+
 fn default_bindings() -> Vec<(Action, KeyCombo)> {
     Action::ALL
         .into_iter()
@@ -267,6 +312,11 @@ fn parse_key(part: &str) -> Result<Key, String> {
     Ok(key)
 }
 
+fn deserialize_modifiers<'de, D: Deserializer<'de>>(d: D) -> Result<Modifiers, D::Error> {
+    let s = String::deserialize(d)?;
+    s.parse::<Modifiers>().map_err(serde::de::Error::custom)
+}
+
 fn add_modifier(modifiers: &mut Modifiers, part: &str) -> Option<()> {
     match part.to_ascii_lowercase().as_str() {
         "ctrl" | "control" => modifiers.ctrl = true,
@@ -282,6 +332,7 @@ fn add_modifier(modifiers: &mut Modifiers, part: &str) -> Option<()> {
 #[serde(default, deny_unknown_fields)]
 struct Wire {
     gaps: Gaps,
+    sweep: Sweep,
     keys: BTreeMap<String, String>,
 }
 
