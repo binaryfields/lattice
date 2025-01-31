@@ -80,7 +80,6 @@ impl SweepMonitor {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
 pub enum SweepEvent {
     Armed { x: f64, y: f64 },
     Moved { x: f64, y: f64 },

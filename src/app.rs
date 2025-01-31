@@ -50,6 +50,7 @@ struct App {
     tray: Option<tray::Tray>,
     sweep_monitor: Option<macos::SweepMonitor>,
     sweep: Option<sweep::Session<macos::AxWindow>>,
+    overlay: Option<macos::Overlay>,
     proxy: EventLoopProxy<UserEvent>,
     trusted: bool,
     initialized: bool,
@@ -67,6 +68,7 @@ impl App {
             tray: None,
             sweep_monitor: None,
             sweep: None,
+            overlay: None,
             proxy,
             trusted: false,
             initialized: false,
@@ -93,6 +95,7 @@ impl App {
                 let _ = proxy.send_event(UserEvent::Sweep(event));
             }),
         );
+        self.overlay = macos::Overlay::new();
     }
 
     fn load_config(&mut self) {
@@ -135,6 +138,9 @@ impl App {
             monitor.set_config(sweep.modifier, sweep.enabled);
         }
         self.sweep = None;
+        if let Some(overlay) = &self.overlay {
+            overlay.hide();
+        }
         if self.config_error.is_none() {
             eprintln!("lattice: config reloaded");
         }
@@ -217,7 +223,7 @@ impl App {
     fn handle_sweep(&mut self, event: SweepEvent) {
         match event {
             SweepEvent::Armed { x, y } => self.arm_sweep(x, y),
-            SweepEvent::Moved { .. } => {}
+            SweepEvent::Moved { x, y } => self.preview_sweep(x, y),
             SweepEvent::Released { x, y } => self.commit_sweep(x, y),
         }
     }
@@ -254,9 +260,29 @@ impl App {
                 visible_frames,
             },
         ));
+        if let Some(overlay) = &self.overlay {
+            overlay.show_ring(x, y);
+        }
+    }
+
+    fn preview_sweep(&mut self, x: f64, y: f64) {
+        let Some(session) = self.sweep.as_mut() else {
+            return;
+        };
+        let change = session.track((x, y), &self.engine, &self.engine.config().sweep);
+        if let Some(overlay) = &self.overlay {
+            match change {
+                sweep::PreviewChange::Show(rect) => overlay.show_outline(&rect),
+                sweep::PreviewChange::Hide => overlay.hide_outline(),
+                sweep::PreviewChange::Unchanged => {}
+            }
+        }
     }
 
     fn commit_sweep(&mut self, x: f64, y: f64) {
+        if let Some(overlay) = &self.overlay {
+            overlay.hide();
+        }
         let Some(session) = self.sweep.take() else {
             return;
         };

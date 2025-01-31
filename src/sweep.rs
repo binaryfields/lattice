@@ -1,12 +1,14 @@
 use crate::action::Action;
 use crate::config::Sweep;
-use crate::engine::{Snapshot, WindowId};
+use crate::engine::{Engine, Snapshot, WindowId};
+use crate::geometry::Rect;
 
 pub struct Session<W> {
     window: W,
     id: WindowId,
     start: (f64, f64),
     snapshot: Snapshot,
+    preview: Option<Rect>,
 }
 
 impl<W> Session<W> {
@@ -16,6 +18,7 @@ impl<W> Session<W> {
             id,
             start,
             snapshot,
+            preview: None,
         }
     }
 
@@ -31,9 +34,29 @@ impl<W> Session<W> {
         &self.snapshot
     }
 
+    pub fn track(&mut self, cursor: (f64, f64), engine: &Engine, cfg: &Sweep) -> PreviewChange {
+        let target = classify(self.start, cursor, cfg.distance)
+            .and_then(|action| engine.preview(action, &self.snapshot));
+        if target == self.preview {
+            return PreviewChange::Unchanged;
+        }
+        self.preview = target;
+        match target {
+            Some(rect) => PreviewChange::Show(rect),
+            None => PreviewChange::Hide,
+        }
+    }
+
     pub fn commit(&self, cursor: (f64, f64), cfg: &Sweep) -> Option<Action> {
         classify(self.start, cursor, cfg.distance)
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum PreviewChange {
+    Unchanged,
+    Show(Rect),
+    Hide,
 }
 
 fn classify(start: (f64, f64), end: (f64, f64), min_distance: f64) -> Option<Action> {

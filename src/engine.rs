@@ -39,21 +39,20 @@ impl Engine {
         }
     }
 
+    pub fn preview(&self, action: Action, snapshot: &Snapshot) -> Option<Rect> {
+        match action {
+            Action::Restore | Action::NextDisplay | Action::PrevDisplay => None,
+            _ => self.target_rect(action, snapshot),
+        }
+    }
+
     fn place_in_display(
         &mut self,
         id: WindowId,
         action: Action,
         snapshot: &Snapshot,
     ) -> Option<Rect> {
-        let display = layout::display_for(&snapshot.window, &snapshot.visible_frames)?;
-        let visible_frame = snapshot.visible_frames[display];
-        let target = layout::place(
-            action,
-            0.5,
-            &snapshot.window,
-            &visible_frame,
-            self.config.gaps,
-        )?;
+        let target = self.target_rect(action, snapshot)?;
         self.windows.entry(id).or_insert(WindowState {
             original: snapshot.window,
         });
@@ -86,6 +85,19 @@ impl Engine {
         self.windows.entry(id).or_insert(WindowState {
             original: snapshot.window,
         });
+        Some(target)
+    }
+
+    fn target_rect(&self, action: Action, snapshot: &Snapshot) -> Option<Rect> {
+        let display = layout::display_for(&snapshot.window, &snapshot.visible_frames)?;
+        let visible_frame = snapshot.visible_frames[display];
+        let target = layout::place(
+            action,
+            0.5,
+            &snapshot.window,
+            &visible_frame,
+            self.config.gaps,
+        )?;
         Some(target)
     }
 }
