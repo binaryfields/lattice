@@ -1,0 +1,15 @@
+[package]
+name = "lattice"
+version = "0.1.0"
+edition = "2024"
+description = "Keyboard-driven window snapping for macOS"
+license = "MIT"
+
+[dependencies]
+global-hotkey = "0.7"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-application-services = "0.3"
+objc2-core-foundation = "0.3"
+objc2-foundation = "0.3"
+winit = "0.30"
