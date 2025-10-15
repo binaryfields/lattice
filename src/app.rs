@@ -1,11 +1,11 @@
-use global_hotkey::hotkey::{Code, HotKey, Modifiers};
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId as WinitWindowId;
 
 use crate::action::Action;
+use crate::hotkey::Hotkeys;
 use crate::layout::{self, Gaps};
 use crate::macos;
 
@@ -22,7 +22,7 @@ pub fn run() {
     }));
 
     let mut app = App {
-        manager: None,
+        hotkeys: None,
         trusted: false,
         initialized: false,
     };
@@ -32,7 +32,7 @@ pub fn run() {
 }
 
 struct App {
-    manager: Option<GlobalHotKeyManager>,
+    hotkeys: Option<Hotkeys>,
     trusted: bool,
     initialized: bool,
 }
@@ -45,16 +45,9 @@ impl App {
                 "lattice: waiting for Accessibility permission (System Settings > Privacy & Security > Accessibility)"
             );
         }
-        match GlobalHotKeyManager::new() {
-            Ok(manager) => {
-                let hotkey =
-                    HotKey::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::ArrowLeft);
-                if let Err(err) = manager.register(hotkey) {
-                    eprintln!("lattice: could not register ctrl+alt+left: {err}");
-                }
-                self.manager = Some(manager);
-            }
-            Err(err) => eprintln!("lattice: failed to create hotkey manager: {err}"),
+        self.hotkeys = Hotkeys::new();
+        if let Some(hotkeys) = self.hotkeys.as_mut() {
+            hotkeys.bind_defaults();
         }
     }
 
@@ -65,6 +58,10 @@ impl App {
                 eprintln!("lattice: ignoring {action:?}: no Accessibility permission");
                 return;
             }
+        }
+        if matches!(action, Action::Restore) {
+            eprintln!("lattice: {action:?} arrives with M6");
+            return;
         }
         let Some(window) = macos::focused_window() else {
             eprintln!("lattice: no focused window");
@@ -108,8 +105,10 @@ impl ApplicationHandler<UserEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::Hotkey(hotkey) => {
-                if hotkey.state() == HotKeyState::Pressed {
-                    self.perform(Action::LeftHalf);
+                if hotkey.state() == HotKeyState::Pressed
+                    && let Some(action) = self.hotkeys.as_ref().and_then(|h| h.action(hotkey.id()))
+                {
+                    self.perform(action);
                 }
             }
         }

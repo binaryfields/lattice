@@ -1,15 +1,14 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use global_hotkey::GlobalHotKeyManager;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 
 use crate::action::Action;
-use crate::config::{Config, KeyCombo};
+
+const CTRL_ALT: Modifiers = Modifiers::CONTROL.union(Modifiers::ALT);
 
 pub struct Hotkeys {
     manager: GlobalHotKeyManager,
-    registered: Vec<HotKey>,
     actions: HashMap<u32, Action>,
 }
 
@@ -18,7 +17,6 @@ impl Hotkeys {
         match GlobalHotKeyManager::new() {
             Ok(manager) => Some(Hotkeys {
                 manager,
-                registered: Vec::new(),
                 actions: HashMap::new(),
             }),
             Err(err) => {
@@ -28,27 +26,21 @@ impl Hotkeys {
         }
     }
 
-    pub fn bind(&mut self, config: &Config) -> Vec<String> {
-        if let Err(err) = self.manager.unregister_all(&self.registered) {
-            eprintln!("lattice: failed to unregister previous hotkeys: {err}");
-        }
-        self.registered.clear();
-        self.actions.clear();
-
+    pub fn bind_defaults(&mut self) -> Vec<String> {
         let mut failures = Vec::new();
-        for (action, combo) in &config.bindings {
-            let hotkey = HotKey::from(*combo);
+        for action in Action::ALL {
+            let hotkey = default_hotkey(action);
             match self.manager.register(hotkey) {
                 Ok(()) => {
-                    self.actions.insert(hotkey.id(), *action);
-                    self.registered.push(hotkey);
+                    self.actions.insert(hotkey.id(), action);
                 }
                 Err(err) => {
                     eprintln!(
-                        "lattice: could not register {combo} for {}: {err}",
+                        "lattice: could not register {} for {}: {err}",
+                        action.default_binding(),
                         action.config_key()
                     );
-                    failures.push(format!("{} ({combo})", action.label()));
+                    failures.push(action.label().to_string());
                 }
             }
         }
@@ -60,23 +52,18 @@ impl Hotkeys {
     }
 }
 
-impl From<KeyCombo> for HotKey {
-    fn from(combo: KeyCombo) -> HotKey {
-        let mut modifiers = Modifiers::empty();
-        if combo.modifiers.ctrl {
-            modifiers |= Modifiers::CONTROL;
-        }
-        if combo.modifiers.alt {
-            modifiers |= Modifiers::ALT;
-        }
-        if combo.modifiers.shift {
-            modifiers |= Modifiers::SHIFT;
-        }
-        if combo.modifiers.cmd {
-            modifiers |= Modifiers::SUPER;
-        }
-        let code = Code::from_str(&combo.key.to_code())
-            .expect("config::Key::to_code emits valid keyboard_types codes");
-        HotKey::new(Some(modifiers), code)
-    }
+fn default_hotkey(action: Action) -> HotKey {
+    let (modifiers, code) = match action {
+        Action::LeftHalf => (CTRL_ALT, Code::ArrowLeft),
+        Action::RightHalf => (CTRL_ALT, Code::ArrowRight),
+        Action::TopHalf => (CTRL_ALT, Code::ArrowUp),
+        Action::BottomHalf => (CTRL_ALT, Code::ArrowDown),
+        Action::TopLeftQuarter => (CTRL_ALT, Code::KeyU),
+        Action::TopRightQuarter => (CTRL_ALT, Code::KeyI),
+        Action::BottomLeftQuarter => (CTRL_ALT, Code::KeyJ),
+        Action::BottomRightQuarter => (CTRL_ALT, Code::KeyK),
+        Action::Maximize => (CTRL_ALT, Code::Enter),
+        Action::Restore => (CTRL_ALT, Code::Backspace),
+    };
+    HotKey::new(Some(modifiers), code)
 }
