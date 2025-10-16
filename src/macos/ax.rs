@@ -5,9 +5,10 @@ use objc2_app_kit::NSWorkspace;
 use objc2_application_services::{
     AXError, AXIsProcessTrustedWithOptions, AXUIElement, AXValue, AXValueType,
 };
-use objc2_core_foundation::{CFDictionary, CFRetained, CFString, CFType, CGPoint, CGSize};
+use objc2_core_foundation::{CFDictionary, CFHash, CFRetained, CFString, CFType, CGPoint, CGSize};
 use objc2_foundation::{NSDictionary, NSNumber, NSString};
 
+use crate::engine::WindowId;
 use crate::geometry::Rect;
 
 pub fn is_trusted() -> bool {
@@ -48,6 +49,14 @@ impl AxWindow {
                 && size.value(AXValueType::CGSize, NonNull::from(&mut cg_size).cast())
         };
         ok.then(|| Rect::new(point.x, point.y, cg_size.width, cg_size.height))
+    }
+
+    pub fn id(&self) -> WindowId {
+        let mut pid: i32 = 0;
+        unsafe { self.0.pid(NonNull::from(&mut pid)) };
+        let element: &CFType = &self.0;
+        let hash = CFHash(Some(element)) as u64;
+        WindowId((pid as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ hash)
     }
 
     pub fn set_frame(&self, frame: &Rect) -> bool {

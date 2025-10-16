@@ -2,6 +2,7 @@
 
 mod action;
 mod app;
+mod engine;
 mod geometry;
 mod hotkey;
 mod layout;
