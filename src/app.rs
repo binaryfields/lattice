@@ -5,6 +5,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId as WinitWindowId;
 
 use crate::action::Action;
+use crate::config::Config;
 use crate::engine::{Engine, Snapshot};
 use crate::hotkey::Hotkeys;
 use crate::macos;
@@ -21,12 +22,7 @@ pub fn run() {
         let _ = proxy.send_event(UserEvent::Hotkey(event));
     }));
 
-    let mut app = App {
-        engine: Engine::new(),
-        hotkeys: None,
-        trusted: false,
-        initialized: false,
-    };
+    let mut app = App::new();
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("lattice: event loop error: {err}");
     }
@@ -35,11 +31,22 @@ pub fn run() {
 struct App {
     engine: Engine,
     hotkeys: Option<Hotkeys>,
+    hotkey_failures: Vec<String>,
     trusted: bool,
     initialized: bool,
 }
 
 impl App {
+    fn new() -> App {
+        App {
+            engine: Engine::new(),
+            hotkeys: None,
+            hotkey_failures: Vec::new(),
+            trusted: false,
+            initialized: false,
+        }
+    }
+
     fn init(&mut self) {
         self.trusted = macos::request_trust();
         if !self.trusted {
@@ -48,8 +55,13 @@ impl App {
             );
         }
         self.hotkeys = Hotkeys::new();
+        self.bind_hotkeys();
+    }
+
+    fn bind_hotkeys(&mut self) {
+        let config = Config::default();
         if let Some(hotkeys) = self.hotkeys.as_mut() {
-            hotkeys.bind_defaults();
+            self.hotkey_failures = hotkeys.bind(&config);
         }
     }
 
