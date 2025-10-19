@@ -5,7 +5,9 @@ use objc2_app_kit::NSWorkspace;
 use objc2_application_services::{
     AXError, AXIsProcessTrustedWithOptions, AXUIElement, AXValue, AXValueType,
 };
-use objc2_core_foundation::{CFDictionary, CFHash, CFRetained, CFString, CFType, CGPoint, CGSize};
+use objc2_core_foundation::{
+    CFBoolean, CFDictionary, CFHash, CFRetained, CFString, CFType, CGPoint, CGSize,
+};
 use objc2_foundation::{NSDictionary, NSNumber, NSString};
 
 use crate::engine::WindowId;
@@ -59,25 +61,37 @@ impl AxWindow {
         WindowId((pid as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ hash)
     }
 
-    pub fn set_frame(&self, frame: &Rect) -> bool {
+    pub fn is_fullscreen(&self) -> bool {
+        copy_attribute(&self.0, &cfstr("AXFullScreen"))
+            .and_then(|value| value.downcast::<CFBoolean>().ok())
+            .map(|value| value.value())
+            .unwrap_or(false)
+    }
+
+    pub fn is_resizable(&self) -> bool {
+        let mut settable: u8 = 0;
+        let err = unsafe {
+            self.0
+                .is_attribute_settable(&cfstr("AXSize"), NonNull::from(&mut settable))
+        };
+        err == AXError::Success && settable != 0
+    }
+
+    pub fn set_frame(&self, frame: &Rect) -> Option<Rect> {
         let mut point = CGPoint::new(frame.x, frame.y);
         let mut size = CGSize::new(frame.width, frame.height);
-        let Some(point_value) =
-            (unsafe { AXValue::new(AXValueType::CGPoint, NonNull::from(&mut point).cast()) })
-        else {
-            return false;
-        };
-        let Some(size_value) =
-            (unsafe { AXValue::new(AXValueType::CGSize, NonNull::from(&mut size).cast()) })
-        else {
-            return false;
-        };
+        let point_value =
+            unsafe { AXValue::new(AXValueType::CGPoint, NonNull::from(&mut point).cast()) }?;
+        let size_value =
+            unsafe { AXValue::new(AXValueType::CGSize, NonNull::from(&mut size).cast()) }?;
         unsafe {
             self.0
-                .set_attribute_value(&cfstr("AXPosition"), &point_value)
-                == AXError::Success
-                && self.0.set_attribute_value(&cfstr("AXSize"), &size_value) == AXError::Success
+                .set_attribute_value(&cfstr("AXPosition"), &point_value);
+            self.0.set_attribute_value(&cfstr("AXSize"), &size_value);
+            self.0
+                .set_attribute_value(&cfstr("AXPosition"), &point_value);
         }
+        self.frame()
     }
 }
 
