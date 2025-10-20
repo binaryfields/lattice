@@ -30,25 +30,10 @@ pub fn place(
             let h = area.height * ratio - half_gap(ratio < 1.0);
             Rect::new(area.x, area.max_y() - h, area.width, h)
         }
-        Action::TopLeftQuarter
-        | Action::TopRightQuarter
-        | Action::BottomLeftQuarter
-        | Action::BottomRightQuarter => {
-            let cw = (area.width - gaps.inner) / 2.0;
-            let ch = (area.height - gaps.inner) / 2.0;
-            let (col, row) = match action {
-                Action::TopLeftQuarter => (0.0, 0.0),
-                Action::TopRightQuarter => (1.0, 0.0),
-                Action::BottomLeftQuarter => (0.0, 1.0),
-                _ => (1.0, 1.0),
-            };
-            Rect::new(
-                area.x + col * (cw + gaps.inner),
-                area.y + row * (ch + gaps.inner),
-                cw,
-                ch,
-            )
-        }
+        Action::TopLeftQuarter => area.column(gaps.inner, 2, 0, 1).row(gaps.inner, 2, 0, 1),
+        Action::TopRightQuarter => area.column(gaps.inner, 2, 1, 1).row(gaps.inner, 2, 0, 1),
+        Action::BottomLeftQuarter => area.column(gaps.inner, 2, 0, 1).row(gaps.inner, 2, 1, 1),
+        Action::BottomRightQuarter => area.column(gaps.inner, 2, 1, 1).row(gaps.inner, 2, 1, 1),
         Action::Maximize => area,
         Action::Restore => return None,
     };
