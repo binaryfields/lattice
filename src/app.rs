@@ -1,13 +1,11 @@
-use std::collections::HashMap;
-
-use global_hotkey::hotkey::{Code, HotKey, Modifiers};
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId as WinitWindowId;
 
 use crate::action::Action;
+use crate::hotkey::Hotkeys;
 use crate::layout::{self, Gaps};
 use crate::macos;
 
@@ -24,8 +22,7 @@ pub fn run() {
     }));
 
     let mut app = App {
-        manager: None,
-        actions: HashMap::new(),
+        hotkeys: None,
         trusted: false,
         initialized: false,
     };
@@ -39,8 +36,7 @@ pub enum UserEvent {
 }
 
 struct App {
-    manager: Option<GlobalHotKeyManager>,
-    actions: HashMap<u32, Action>,
+    hotkeys: Option<Hotkeys>,
     trusted: bool,
     initialized: bool,
 }
@@ -59,7 +55,7 @@ impl ApplicationHandler<UserEvent> for App {
         match event {
             UserEvent::Hotkey(hotkey) => {
                 if hotkey.state() == HotKeyState::Pressed
-                    && let Some(action) = self.actions.get(&hotkey.id()).copied()
+                    && let Some(action) = self.hotkeys.as_ref().and_then(|h| h.action(hotkey.id()))
                 {
                     self.perform(action);
                 }
@@ -84,26 +80,9 @@ impl App {
                 "lattice: waiting for Accessibility permission (System Settings > Privacy & Security > Accessibility)"
             );
         }
-        match GlobalHotKeyManager::new() {
-            Ok(manager) => {
-                for (action, code) in [
-                    (Action::LeftHalf, Code::ArrowLeft),
-                    (Action::RightHalf, Code::ArrowRight),
-                    (Action::TopHalf, Code::ArrowUp),
-                    (Action::BottomHalf, Code::ArrowDown),
-                    (Action::Maximize, Code::Enter),
-                ] {
-                    let hotkey = HotKey::new(Some(Modifiers::CONTROL | Modifiers::ALT), code);
-                    match manager.register(hotkey) {
-                        Ok(()) => {
-                            self.actions.insert(hotkey.id(), action);
-                        }
-                        Err(err) => eprintln!("lattice: could not register {action:?}: {err}"),
-                    }
-                }
-                self.manager = Some(manager);
-            }
-            Err(err) => eprintln!("lattice: failed to create hotkey manager: {err}"),
+        self.hotkeys = Hotkeys::new();
+        if let Some(hotkeys) = self.hotkeys.as_mut() {
+            hotkeys.bind_defaults();
         }
     }
 

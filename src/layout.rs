@@ -39,6 +39,25 @@ pub fn place(action: Action, _window: &Rect, visible_frame: &Rect, gaps: Gaps) -
             let h = half(area.height);
             Rect::new(area.x, area.max_y() - h, area.width, h)
         }
+        Action::TopLeftQuarter
+        | Action::TopRightQuarter
+        | Action::BottomLeftQuarter
+        | Action::BottomRightQuarter => {
+            let cw = (area.width - gaps.inner) / 2.0;
+            let ch = (area.height - gaps.inner) / 2.0;
+            let (col, row) = match action {
+                Action::TopLeftQuarter => (0.0, 0.0),
+                Action::TopRightQuarter => (1.0, 0.0),
+                Action::BottomLeftQuarter => (0.0, 1.0),
+                _ => (1.0, 1.0),
+            };
+            Rect::new(
+                area.x + col * (cw + gaps.inner),
+                area.y + row * (ch + gaps.inner),
+                cw,
+                ch,
+            )
+        }
         Action::Maximize => area,
     };
     Some(rect)
