@@ -8,12 +8,19 @@ pub enum Action {
     TopRightQuarter,
     BottomLeftQuarter,
     BottomRightQuarter,
+    FirstThird,
+    CenterThird,
+    LastThird,
+    FirstTwoThirds,
+    LastTwoThirds,
     Maximize,
+    AlmostMaximize,
+    Center,
     Restore,
 }
 
 impl Action {
-    pub const ALL: [Action; 10] = [
+    pub const ALL: [Action; 17] = [
         Action::LeftHalf,
         Action::RightHalf,
         Action::TopHalf,
@@ -22,7 +29,14 @@ impl Action {
         Action::TopRightQuarter,
         Action::BottomLeftQuarter,
         Action::BottomRightQuarter,
+        Action::FirstThird,
+        Action::CenterThird,
+        Action::LastThird,
+        Action::FirstTwoThirds,
+        Action::LastTwoThirds,
         Action::Maximize,
+        Action::AlmostMaximize,
+        Action::Center,
         Action::Restore,
     ];
 
@@ -40,7 +54,14 @@ impl Action {
             Action::TopRightQuarter => "top-right-quarter",
             Action::BottomLeftQuarter => "bottom-left-quarter",
             Action::BottomRightQuarter => "bottom-right-quarter",
+            Action::FirstThird => "first-third",
+            Action::CenterThird => "center-third",
+            Action::LastThird => "last-third",
+            Action::FirstTwoThirds => "first-two-thirds",
+            Action::LastTwoThirds => "last-two-thirds",
             Action::Maximize => "maximize",
+            Action::AlmostMaximize => "almost-maximize",
+            Action::Center => "center",
             Action::Restore => "restore",
         }
     }
@@ -55,7 +76,14 @@ impl Action {
             Action::TopRightQuarter => "Top Right Quarter",
             Action::BottomLeftQuarter => "Bottom Left Quarter",
             Action::BottomRightQuarter => "Bottom Right Quarter",
+            Action::FirstThird => "First Third",
+            Action::CenterThird => "Center Third",
+            Action::LastThird => "Last Third",
+            Action::FirstTwoThirds => "First Two Thirds",
+            Action::LastTwoThirds => "Last Two Thirds",
             Action::Maximize => "Maximize",
+            Action::AlmostMaximize => "Almost Maximize",
+            Action::Center => "Center",
             Action::Restore => "Restore",
         }
     }
@@ -70,12 +98,19 @@ impl Action {
             Action::TopRightQuarter => "ctrl+alt+i",
             Action::BottomLeftQuarter => "ctrl+alt+j",
             Action::BottomRightQuarter => "ctrl+alt+k",
+            Action::FirstThird => "ctrl+alt+d",
+            Action::CenterThird => "ctrl+alt+f",
+            Action::LastThird => "ctrl+alt+g",
+            Action::FirstTwoThirds => "ctrl+alt+e",
+            Action::LastTwoThirds => "ctrl+alt+t",
             Action::Maximize => "ctrl+alt+enter",
+            Action::AlmostMaximize => "ctrl+alt+shift+enter",
+            Action::Center => "ctrl+alt+c",
             Action::Restore => "ctrl+alt+backspace",
         }
     }
 
     pub fn resizes(self) -> bool {
-        !matches!(self, Action::Restore)
+        !matches!(self, Action::Center | Action::Restore)
     }
 }

@@ -6,7 +6,7 @@ const DEFAULT_GAP: f64 = 5.0;
 pub fn place(
     action: Action,
     ratio: f64,
-    _window: &Rect,
+    window: &Rect,
     visible_frame: &Rect,
     gaps: Gaps,
 ) -> Option<Rect> {
@@ -34,7 +34,16 @@ pub fn place(
         Action::TopRightQuarter => area.column(gaps.inner, 2, 1, 1).row(gaps.inner, 2, 0, 1),
         Action::BottomLeftQuarter => area.column(gaps.inner, 2, 0, 1).row(gaps.inner, 2, 1, 1),
         Action::BottomRightQuarter => area.column(gaps.inner, 2, 1, 1).row(gaps.inner, 2, 1, 1),
+        Action::FirstThird => area.column(gaps.inner, 3, 0, 1),
+        Action::CenterThird => area.column(gaps.inner, 3, 1, 1),
+        Action::LastThird => area.column(gaps.inner, 3, 2, 1),
+        Action::FirstTwoThirds => area.column(gaps.inner, 3, 0, 2),
+        Action::LastTwoThirds => area.column(gaps.inner, 3, 1, 2),
         Action::Maximize => area,
+        Action::AlmostMaximize => {
+            Rect::new(0.0, 0.0, area.width * 0.9, area.height * 0.9).centered_in(&area)
+        }
+        Action::Center => window.centered_in(&area),
         Action::Restore => return None,
     };
     Some(rect)
