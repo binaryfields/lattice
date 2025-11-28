@@ -12,6 +12,7 @@ pub enum Action {
     BottomLeftQuarter,
     BottomRightQuarter,
     Maximize,
+    Restore,
 }
 
 impl Action {
@@ -30,6 +31,7 @@ impl Action {
             Action::BottomLeftQuarter => ("Bottom Left Quarter", "ctrl+alt+j"),
             Action::BottomRightQuarter => ("Bottom Right Quarter", "ctrl+alt+k"),
             Action::Maximize => ("Maximize", "ctrl+alt+enter"),
+            Action::Restore => ("Restore", "ctrl+alt+backspace"),
         }
     }
 

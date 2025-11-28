@@ -5,8 +5,8 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId as WinitWindowId;
 
 use crate::action::Action;
+use crate::engine::{Engine, Snapshot};
 use crate::hotkey::Hotkeys;
-use crate::layout::{self, Gaps};
 use crate::macos;
 
 pub fn run() {
@@ -22,6 +22,7 @@ pub fn run() {
     }));
 
     let mut app = App {
+        engine: Engine::new(),
         hotkeys: None,
         trusted: false,
         initialized: false,
@@ -36,6 +37,7 @@ pub enum UserEvent {
 }
 
 struct App {
+    engine: Engine,
     hotkeys: Option<Hotkeys>,
     trusted: bool,
     initialized: bool,
@@ -105,7 +107,15 @@ impl App {
         let Some(visible_frame) = macos::main_visible_frame() else {
             return;
         };
-        let Some(target) = layout::place(action, &frame, &visible_frame, Gaps::default()) else {
+        let Some(id) = window.id() else {
+            eprintln!("lattice: could not identify focused window");
+            return;
+        };
+        let snapshot = Snapshot {
+            window: frame,
+            visible_frame,
+        };
+        let Some(target) = self.engine.place(id, action, &snapshot) else {
             return;
         };
         if let Err(err) = window.set_frame(&target) {

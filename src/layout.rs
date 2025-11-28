@@ -59,6 +59,7 @@ pub fn place(action: Action, _window: &Rect, visible_frame: &Rect, gaps: Gaps) -
             )
         }
         Action::Maximize => area,
+        Action::Restore => return None,
     };
     Some(rect)
 }

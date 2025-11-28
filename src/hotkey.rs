@@ -60,6 +60,7 @@ fn default_hotkey(action: Action) -> HotKey {
         Action::BottomLeftQuarter => (CTRL_ALT, Code::KeyJ),
         Action::BottomRightQuarter => (CTRL_ALT, Code::KeyK),
         Action::Maximize => (CTRL_ALT, Code::Enter),
+        Action::Restore => (CTRL_ALT, Code::Backspace),
     };
     HotKey::new(Some(modifiers), code)
 }

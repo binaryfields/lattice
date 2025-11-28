@@ -9,6 +9,7 @@ use objc2_core_foundation::{
     CFBoolean, CFDictionary, CFRetained, CFString, CFType, CGPoint, CGSize,
 };
 
+use crate::engine::WindowId;
 use crate::geometry::Rect;
 
 pub struct AxWindow(CFRetained<AXUIElement>);
@@ -27,6 +28,15 @@ impl AxWindow {
                 && extent.value(AXValueType::CGSize, NonNull::from(&mut size).cast())
         };
         read.then(|| Rect::new(origin.x, origin.y, size.width, size.height))
+    }
+
+    pub fn id(&self) -> Option<WindowId> {
+        unsafe extern "C" {
+            fn _AXUIElementGetWindow(element: &AXUIElement, window: NonNull<u32>) -> AXError;
+        }
+        let mut id: u32 = 0;
+        let err = unsafe { _AXUIElementGetWindow(&self.0, NonNull::from(&mut id)) };
+        (err == AXError::Success).then_some(WindowId(u64::from(id)))
     }
 
     pub fn set_frame(&self, frame: &Rect) -> Result<(), AXError> {
