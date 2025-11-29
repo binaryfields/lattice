@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 
 use global_hotkey::GlobalHotKeyManager;
-use global_hotkey::hotkey::{Code, HotKey, Modifiers};
-use strum::IntoEnumIterator;
+use global_hotkey::hotkey::HotKey;
 
 use crate::action::Action;
-
-const CTRL_ALT: Modifiers = Modifiers::CONTROL.union(Modifiers::ALT);
+use crate::config::Config;
 
 pub struct Hotkeys {
     manager: GlobalHotKeyManager,
+    registered: Vec<HotKey>,
     actions: HashMap<u32, Action>,
 }
 
@@ -20,24 +19,28 @@ impl Hotkeys {
             .ok()?;
         Some(Hotkeys {
             manager,
+            registered: Vec::new(),
             actions: HashMap::new(),
         })
     }
 
-    pub fn bind_defaults(&mut self) -> Vec<String> {
+    pub fn bind(&mut self, config: &Config) -> Vec<String> {
+        if let Err(err) = self.manager.unregister_all(&self.registered) {
+            eprintln!("lattice: failed to unregister previous hotkeys: {err}");
+        }
+        self.registered.clear();
+        self.actions.clear();
+
         let mut failures = Vec::new();
-        for action in Action::iter() {
-            let hotkey = default_hotkey(action);
+        for (&action, &hotkey) in &config.bindings {
             match self.manager.register(hotkey) {
                 Ok(()) => {
                     self.actions.insert(hotkey.id(), action);
+                    self.registered.push(hotkey);
                 }
                 Err(err) => {
-                    eprintln!(
-                        "lattice: could not register {} for {action}: {err}",
-                        action.default_binding()
-                    );
-                    failures.push(action.label().to_string());
+                    eprintln!("lattice: could not register {hotkey} for {action}: {err}");
+                    failures.push(format!("{} ({hotkey})", action.label()));
                 }
             }
         }
@@ -47,20 +50,4 @@ impl Hotkeys {
     pub fn action(&self, hotkey_id: u32) -> Option<Action> {
         self.actions.get(&hotkey_id).copied()
     }
-}
-
-fn default_hotkey(action: Action) -> HotKey {
-    let (modifiers, code) = match action {
-        Action::LeftHalf => (CTRL_ALT, Code::ArrowLeft),
-        Action::RightHalf => (CTRL_ALT, Code::ArrowRight),
-        Action::TopHalf => (CTRL_ALT, Code::ArrowUp),
-        Action::BottomHalf => (CTRL_ALT, Code::ArrowDown),
-        Action::TopLeftQuarter => (CTRL_ALT, Code::KeyU),
-        Action::TopRightQuarter => (CTRL_ALT, Code::KeyI),
-        Action::BottomLeftQuarter => (CTRL_ALT, Code::KeyJ),
-        Action::BottomRightQuarter => (CTRL_ALT, Code::KeyK),
-        Action::Maximize => (CTRL_ALT, Code::Enter),
-        Action::Restore => (CTRL_ALT, Code::Backspace),
-    };
-    HotKey::new(Some(modifiers), code)
 }
