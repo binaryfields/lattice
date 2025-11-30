@@ -11,7 +11,14 @@ pub enum Action {
     TopRightQuarter,
     BottomLeftQuarter,
     BottomRightQuarter,
+    FirstThird,
+    CenterThird,
+    LastThird,
+    FirstTwoThirds,
+    LastTwoThirds,
     Maximize,
+    AlmostMaximize,
+    Center,
     Restore,
 }
 
@@ -30,12 +37,23 @@ impl Action {
             Action::TopRightQuarter => ("Top Right Quarter", "ctrl+alt+i"),
             Action::BottomLeftQuarter => ("Bottom Left Quarter", "ctrl+alt+j"),
             Action::BottomRightQuarter => ("Bottom Right Quarter", "ctrl+alt+k"),
+            Action::FirstThird => ("First Third", "ctrl+alt+d"),
+            Action::CenterThird => ("Center Third", "ctrl+alt+f"),
+            Action::LastThird => ("Last Third", "ctrl+alt+g"),
+            Action::FirstTwoThirds => ("First Two Thirds", "ctrl+alt+e"),
+            Action::LastTwoThirds => ("Last Two Thirds", "ctrl+alt+t"),
             Action::Maximize => ("Maximize", "ctrl+alt+enter"),
+            Action::AlmostMaximize => ("Almost Maximize", "ctrl+alt+shift+enter"),
+            Action::Center => ("Center", "ctrl+alt+c"),
             Action::Restore => ("Restore", "ctrl+alt+backspace"),
         }
     }
 
     pub fn label(self) -> &'static str {
         self.spec().0
+    }
+
+    pub fn resizes(self) -> bool {
+        !matches!(self, Action::Center | Action::Restore)
     }
 }

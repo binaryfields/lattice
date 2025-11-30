@@ -114,6 +114,14 @@ impl App {
             eprintln!("lattice: no focused window");
             return;
         };
+        if window.is_fullscreen() {
+            eprintln!("lattice: focused window is full screen; ignoring {action:?}");
+            return;
+        }
+        if action.resizes() && !window.is_resizable() {
+            eprintln!("lattice: focused window is not resizable; ignoring {action:?}");
+            return;
+        }
         let Some(frame) = window.frame() else {
             eprintln!("lattice: could not read focused window frame");
             return;

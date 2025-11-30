@@ -15,6 +15,12 @@ use crate::geometry::Rect;
 pub struct AxWindow(CFRetained<AXUIElement>);
 
 impl AxWindow {
+    pub fn is_fullscreen(&self) -> bool {
+        copy_attribute(&self.0, &cfstr("AXFullScreen"))
+            .and_then(|value| value.downcast::<CFBoolean>().ok())
+            .is_some_and(|value| value.value())
+    }
+
     pub fn frame(&self) -> Option<Rect> {
         let position = copy_attribute(&self.0, &cfstr("AXPosition"))?
             .downcast::<AXValue>()
@@ -39,11 +45,21 @@ impl AxWindow {
         (err == AXError::Success).then_some(WindowId(u64::from(id)))
     }
 
+    pub fn is_resizable(&self) -> bool {
+        let mut settable: u8 = 0;
+        let err = unsafe {
+            self.0
+                .is_attribute_settable(&cfstr("AXSize"), NonNull::from(&mut settable))
+        };
+        err == AXError::Success && settable != 0
+    }
+
     pub fn set_frame(&self, frame: &Rect) -> Result<(), AXError> {
         let origin = CGPoint::new(frame.x, frame.y);
         let size = CGSize::new(frame.width, frame.height);
         self.set_value("AXPosition", AXValueType::CGPoint, origin)?;
-        self.set_value("AXSize", AXValueType::CGSize, size)
+        self.set_value("AXSize", AXValueType::CGSize, size)?;
+        self.set_value("AXPosition", AXValueType::CGPoint, origin)
     }
 
     fn set_value<T>(
