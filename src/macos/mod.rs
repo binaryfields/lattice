@@ -9,13 +9,20 @@ use objc2_app_kit::NSScreen;
 
 use crate::geometry::Rect;
 
-pub fn main_visible_frame() -> Option<Rect> {
-    let mtm = MainThreadMarker::new()?;
+pub fn visible_frames() -> Vec<Rect> {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return Vec::new();
+    };
     let screens = NSScreen::screens(mtm);
-    let primary_display_height = screens.iter().next()?.frame().size.height;
-    let vf = NSScreen::mainScreen(mtm)?.visibleFrame();
-    Some(
-        Rect::new(vf.origin.x, vf.origin.y, vf.size.width, vf.size.height)
-            .flip_vertical(primary_display_height),
-    )
+    let Some(primary_display_height) = screens.iter().next().map(|s| s.frame().size.height) else {
+        return Vec::new();
+    };
+    screens
+        .iter()
+        .map(|screen| {
+            let vf = screen.visibleFrame();
+            Rect::new(vf.origin.x, vf.origin.y, vf.size.width, vf.size.height)
+                .flip_vertical(primary_display_height)
+        })
+        .collect()
 }

@@ -46,7 +46,7 @@ struct App {
 impl App {
     fn new() -> App {
         App {
-            engine: Engine::new(),
+            engine: Engine::new(Config::default()),
             hotkeys: None,
             hotkey_failures: Vec::new(),
             tray: None,
@@ -109,13 +109,14 @@ impl App {
             eprintln!("lattice: could not read focused window frame");
             return;
         };
-        let Some(visible_frame) = macos::main_visible_frame() else {
+        let visible_frames = macos::visible_frames();
+        if visible_frames.is_empty() {
             return;
-        };
+        }
         let id = window.id();
         let snapshot = Snapshot {
             window: frame,
-            visible_frames: vec![visible_frame],
+            visible_frames,
         };
         let Some(target) = self.engine.place(id, action, &snapshot) else {
             return;

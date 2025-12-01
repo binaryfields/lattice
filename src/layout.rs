@@ -44,7 +44,7 @@ pub fn place(
             Rect::new(0.0, 0.0, area.width * 0.9, area.height * 0.9).centered_in(&area)
         }
         Action::Center => window.centered_in(&area),
-        Action::Restore => return None,
+        Action::Restore | Action::NextDisplay | Action::PrevDisplay => return None,
     };
     Some(rect)
 }
@@ -77,6 +77,17 @@ pub fn display_for(window: &Rect, visible_frames: &[Rect]) -> Option<usize> {
             da.total_cmp(&db)
         })
         .map(|(i, _)| i)
+}
+
+pub fn remap_between(window: &Rect, from: &Rect, to: &Rect) -> Rect {
+    let sx = to.width / from.width;
+    let sy = to.height / from.height;
+    Rect::new(
+        to.x + (window.x - from.x) * sx,
+        to.y + (window.y - from.y) * sy,
+        window.width * sx,
+        window.height * sy,
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]

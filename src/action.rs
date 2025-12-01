@@ -17,10 +17,12 @@ pub enum Action {
     AlmostMaximize,
     Center,
     Restore,
+    NextDisplay,
+    PrevDisplay,
 }
 
 impl Action {
-    pub const ALL: [Action; 17] = [
+    pub const ALL: [Action; 19] = [
         Action::LeftHalf,
         Action::RightHalf,
         Action::TopHalf,
@@ -38,6 +40,8 @@ impl Action {
         Action::AlmostMaximize,
         Action::Center,
         Action::Restore,
+        Action::NextDisplay,
+        Action::PrevDisplay,
     ];
 
     pub fn from_config_key(key: &str) -> Option<Action> {
@@ -63,6 +67,8 @@ impl Action {
             Action::AlmostMaximize => "almost-maximize",
             Action::Center => "center",
             Action::Restore => "restore",
+            Action::NextDisplay => "next-display",
+            Action::PrevDisplay => "prev-display",
         }
     }
 
@@ -85,6 +91,8 @@ impl Action {
             Action::AlmostMaximize => "Almost Maximize",
             Action::Center => "Center",
             Action::Restore => "Restore",
+            Action::NextDisplay => "Next Display",
+            Action::PrevDisplay => "Previous Display",
         }
     }
 
@@ -107,6 +115,8 @@ impl Action {
             Action::AlmostMaximize => "ctrl+alt+shift+enter",
             Action::Center => "ctrl+alt+c",
             Action::Restore => "ctrl+alt+backspace",
+            Action::NextDisplay => "ctrl+alt+cmd+right",
+            Action::PrevDisplay => "ctrl+alt+cmd+left",
         }
     }
 
