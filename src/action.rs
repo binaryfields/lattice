@@ -20,6 +20,8 @@ pub enum Action {
     AlmostMaximize,
     Center,
     Restore,
+    NextDisplay,
+    PrevDisplay,
 }
 
 impl Action {
@@ -46,6 +48,8 @@ impl Action {
             Action::AlmostMaximize => ("Almost Maximize", "ctrl+alt+shift+enter"),
             Action::Center => ("Center", "ctrl+alt+c"),
             Action::Restore => ("Restore", "ctrl+alt+backspace"),
+            Action::NextDisplay => ("Next Display", "ctrl+alt+cmd+right"),
+            Action::PrevDisplay => ("Previous Display", "ctrl+alt+cmd+left"),
         }
     }
 

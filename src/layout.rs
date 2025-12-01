@@ -20,25 +20,11 @@ impl Default for Gaps {
 
 pub fn place(action: Action, window: &Rect, visible_frame: &Rect, gaps: Gaps) -> Option<Rect> {
     let area = visible_frame.inset(gaps.outer);
-    let half = |full: f64| full / 2.0 - gaps.inner / 2.0;
-
     let rect = match action {
-        Action::LeftHalf => {
-            let w = half(area.width);
-            Rect::new(area.x, area.y, w, area.height)
-        }
-        Action::RightHalf => {
-            let w = half(area.width);
-            Rect::new(area.max_x() - w, area.y, w, area.height)
-        }
-        Action::TopHalf => {
-            let h = half(area.height);
-            Rect::new(area.x, area.y, area.width, h)
-        }
-        Action::BottomHalf => {
-            let h = half(area.height);
-            Rect::new(area.x, area.max_y() - h, area.width, h)
-        }
+        Action::LeftHalf => area.column(gaps.inner, 2, 0, 1),
+        Action::RightHalf => area.column(gaps.inner, 2, 1, 1),
+        Action::TopHalf => area.row(gaps.inner, 2, 0, 1),
+        Action::BottomHalf => area.row(gaps.inner, 2, 1, 1),
         Action::TopLeftQuarter => area.column(gaps.inner, 2, 0, 1).row(gaps.inner, 2, 0, 1),
         Action::TopRightQuarter => area.column(gaps.inner, 2, 1, 1).row(gaps.inner, 2, 0, 1),
         Action::BottomLeftQuarter => area.column(gaps.inner, 2, 0, 1).row(gaps.inner, 2, 1, 1),
@@ -53,7 +39,7 @@ pub fn place(action: Action, window: &Rect, visible_frame: &Rect, gaps: Gaps) ->
             Rect::new(0.0, 0.0, area.width * 0.9, area.height * 0.9).centered_in(&area)
         }
         Action::Center => window.centered_in(&area),
-        Action::Restore => return None,
+        Action::Restore | Action::NextDisplay | Action::PrevDisplay => return None,
     };
     Some(rect)
 }

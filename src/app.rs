@@ -126,16 +126,17 @@ impl App {
             eprintln!("lattice: could not read focused window frame");
             return;
         };
-        let Some(visible_frame) = macos::main_visible_frame() else {
+        let visible_frames = macos::visible_frames();
+        if visible_frames.is_empty() {
             return;
-        };
+        }
         let Some(id) = window.id() else {
             eprintln!("lattice: could not identify focused window");
             return;
         };
         let snapshot = Snapshot {
             window: frame,
-            visible_frame,
+            visible_frames,
         };
         let Some(target) = self.engine.place(id, action, &snapshot) else {
             return;
