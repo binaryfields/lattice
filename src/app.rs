@@ -76,6 +76,9 @@ impl App {
 
     fn handle_menu(&mut self, event_loop: &ActiveEventLoop, id: &str) {
         match id {
+            tray::LOGIN_ID => {
+                macos::set_start_at_login(!macos::starts_at_login());
+            }
             tray::QUIT_ID => event_loop.exit(),
             key => {
                 if let Some(action) = Action::from_config_key(key) {

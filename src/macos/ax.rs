@@ -1,3 +1,4 @@
+use std::process::Command;
 use std::ptr::NonNull;
 
 use objc2::rc::Retained;
@@ -23,6 +24,12 @@ pub fn request_trust() -> bool {
         NSDictionary::from_slices(&[&*key], &[&*NSNumber::new_bool(true)]);
     let options: *const CFDictionary = Retained::as_ptr(&options).cast();
     unsafe { AXIsProcessTrustedWithOptions(Some(&*options)) }
+}
+
+pub fn open_accessibility_settings() {
+    let _ = Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .spawn();
 }
 
 pub fn focused_window() -> Option<AxWindow> {

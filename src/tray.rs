@@ -1,7 +1,10 @@
-use tray_icon::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
+use crate::macos;
+
 pub const QUIT_ID: &str = "quit";
+pub const LOGIN_ID: &str = "login";
 
 pub struct Tray {
     icon: TrayIcon,
@@ -28,7 +31,15 @@ impl Tray {
 
 fn build_menu() -> Option<Menu> {
     let menu = Menu::new();
+    let login = CheckMenuItem::with_id(
+        LOGIN_ID,
+        "Start at Login",
+        true,
+        macos::starts_at_login(),
+        None,
+    );
     menu.append_items(&[
+        &login,
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(QUIT_ID, "Quit Lattice", true, None),
     ])
