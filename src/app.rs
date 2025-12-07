@@ -1,8 +1,10 @@
+use std::time::{Duration, Instant};
+
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use tray_icon::menu::MenuEvent;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::WindowId as WinitWindowId;
 
 use crate::action::Action;
@@ -11,6 +13,8 @@ use crate::engine::{Engine, Snapshot};
 use crate::hotkey::Hotkeys;
 use crate::macos;
 use crate::tray;
+
+const POLL: Duration = Duration::from_secs(2);
 
 pub fn run() {
     let mut builder = EventLoop::<UserEvent>::with_user_event();
@@ -64,20 +68,21 @@ impl App {
         }
         self.hotkeys = Hotkeys::new();
         self.bind_hotkeys();
-        self.tray = tray::Tray::new();
+        self.tray = tray::Tray::new(self.engine.config(), &self.status());
     }
 
     fn bind_hotkeys(&mut self) {
-        let config = Config::default();
         if let Some(hotkeys) = self.hotkeys.as_mut() {
-            self.hotkey_failures = hotkeys.bind(&config);
+            self.hotkey_failures = hotkeys.bind(self.engine.config());
         }
     }
 
     fn handle_menu(&mut self, event_loop: &ActiveEventLoop, id: &str) {
         match id {
+            tray::GRANT_ACCESS_ID => macos::open_accessibility_settings(),
             tray::LOGIN_ID => {
                 macos::set_start_at_login(!macos::starts_at_login());
+                self.update_tray();
             }
             tray::QUIT_ID => event_loop.exit(),
             key => {
@@ -95,6 +100,7 @@ impl App {
                 eprintln!("lattice: ignoring {action:?}: no Accessibility permission");
                 return;
             }
+            self.update_tray();
         }
         let Some(window) = macos::focused_window() else {
             eprintln!("lattice: no focused window");
@@ -126,6 +132,19 @@ impl App {
         };
         if window.set_frame(&target).is_none() {
             eprintln!("lattice: failed to apply frame for {action:?}");
+        }
+    }
+
+    fn status(&self) -> tray::Status<'_> {
+        tray::Status {
+            trusted: self.trusted,
+            hotkey_failures: &self.hotkey_failures,
+        }
+    }
+
+    fn update_tray(&self) {
+        if let Some(tray) = &self.tray {
+            tray.update(self.engine.config(), &self.status());
         }
     }
 }
@@ -162,6 +181,15 @@ impl ApplicationHandler<UserEvent> for App {
                 self.handle_menu(event_loop, &id);
             }
         }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.initialized && !self.trusted && macos::is_trusted() {
+            self.trusted = true;
+            eprintln!("lattice: Accessibility permission granted");
+            self.update_tray();
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + POLL));
     }
 }
 
