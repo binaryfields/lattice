@@ -1,7 +1,10 @@
+use std::time::{Duration, Instant};
+
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
+use tray_icon::menu::MenuEvent;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::WindowId as WinitWindowId;
 
 use crate::action::Action;
@@ -9,6 +12,9 @@ use crate::config::Config;
 use crate::engine::{Engine, Snapshot};
 use crate::hotkey::Hotkeys;
 use crate::macos;
+use crate::tray;
+
+const POLL: Duration = Duration::from_secs(2);
 
 pub fn run() {
     let mut builder = EventLoop::<UserEvent>::with_user_event();
@@ -21,6 +27,10 @@ pub fn run() {
     GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
         let _ = proxy.send_event(UserEvent::Hotkey(event));
     }));
+    let proxy = event_loop.create_proxy();
+    MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+        let _ = proxy.send_event(UserEvent::Menu(event));
+    }));
 
     let mut app = App::new();
     if let Err(err) = event_loop.run_app(&mut app) {
@@ -30,12 +40,15 @@ pub fn run() {
 
 pub enum UserEvent {
     Hotkey(GlobalHotKeyEvent),
+    Menu(MenuEvent),
 }
 
 struct App {
     engine: Engine,
+    config: Config,
     hotkeys: Option<Hotkeys>,
-    hotkey_failures: Vec<String>,
+    hotkey_failures: usize,
+    tray: Option<tray::Tray>,
     trusted: bool,
     initialized: bool,
 }
@@ -44,8 +57,10 @@ impl App {
     fn new() -> App {
         App {
             engine: Engine::new(),
+            config: Config::default(),
             hotkeys: None,
-            hotkey_failures: Vec::new(),
+            hotkey_failures: 0,
+            tray: None,
             trusted: false,
             initialized: false,
         }
@@ -62,14 +77,18 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::Hotkey(hotkey) => {
                 if hotkey.state() == HotKeyState::Pressed
-                    && let Some(action) = self.hotkeys.as_ref().and_then(|h| h.action(hotkey.id()))
+                    && let Some(action) = self.config.bound_action(hotkey.id())
                 {
                     self.perform(action);
                 }
+            }
+            UserEvent::Menu(menu) => {
+                let id = menu.id().0.clone();
+                self.handle_menu(event_loop, &id);
             }
         }
     }
@@ -80,6 +99,13 @@ impl ApplicationHandler<UserEvent> for App {
         _window_id: WinitWindowId,
         _event: WindowEvent,
     ) {
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.initialized {
+            self.refresh_trust();
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + POLL));
     }
 }
 
@@ -93,22 +119,57 @@ impl App {
         }
         self.hotkeys = Hotkeys::new();
         self.bind_hotkeys();
+        self.tray = tray::Tray::new(&self.config, &self.status());
     }
 
     fn bind_hotkeys(&mut self) {
-        let config = Config::default();
         if let Some(hotkeys) = self.hotkeys.as_mut() {
-            self.hotkey_failures = hotkeys.bind(&config);
+            self.hotkey_failures = hotkeys.bind(&self.config);
+        }
+    }
+
+    fn status(&self) -> tray::Status {
+        tray::Status {
+            trusted: self.trusted,
+            hotkey_failures: self.hotkey_failures,
+        }
+    }
+
+    fn refresh_trust(&mut self) -> bool {
+        if !self.trusted && macos::is_trusted() {
+            self.trusted = true;
+            eprintln!("lattice: Accessibility permission granted");
+            self.update_tray();
+        }
+        self.trusted
+    }
+
+    fn update_tray(&self) {
+        if let Some(tray) = &self.tray {
+            tray.update(&self.config, &self.status());
+        }
+    }
+
+    fn handle_menu(&mut self, event_loop: &ActiveEventLoop, id: &str) {
+        match id {
+            tray::GRANT_ACCESS_ID => macos::open(macos::ACCESSIBILITY_SETTINGS),
+            tray::LOGIN_ID => {
+                macos::set_start_at_login(!macos::starts_at_login());
+                self.update_tray();
+            }
+            tray::QUIT_ID => event_loop.exit(),
+            key => {
+                if let Some(action) = Action::from_config_key(key) {
+                    self.perform(action);
+                }
+            }
         }
     }
 
     fn perform(&mut self, action: Action) {
-        if !self.trusted {
-            self.trusted = macos::is_trusted();
-            if !self.trusted {
-                eprintln!("lattice: ignoring {action:?}: no Accessibility permission");
-                return;
-            }
+        if !self.refresh_trust() {
+            eprintln!("lattice: ignoring {action:?}: no Accessibility permission");
+            return;
         }
         let Some(window) = macos::focused_window() else {
             eprintln!("lattice: no focused window");

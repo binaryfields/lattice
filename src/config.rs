@@ -12,6 +12,14 @@ pub struct Config {
     pub bindings: BTreeMap<Action, HotKey>,
 }
 
+impl Config {
+    pub fn bound_action(&self, id: u32) -> Option<Action> {
+        self.bindings
+            .iter()
+            .find_map(|(&action, hotkey)| (hotkey.id() == id).then_some(action))
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {

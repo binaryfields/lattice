@@ -7,6 +7,7 @@ mod geometry;
 mod hotkey;
 mod layout;
 mod macos;
+mod tray;
 
 fn main() {
     app::run()

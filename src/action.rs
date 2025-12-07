@@ -25,6 +25,10 @@ pub enum Action {
 }
 
 impl Action {
+    pub fn from_config_key(key: &str) -> Option<Action> {
+        key.parse().ok()
+    }
+
     pub fn default_binding(self) -> &'static str {
         self.spec().1
     }
