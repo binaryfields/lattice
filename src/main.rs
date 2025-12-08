@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod action;
 mod app;
 mod config;

@@ -1,5 +1,9 @@
+use std::collections::BTreeMap;
 use std::fmt;
+use std::path::Path;
 use std::str::FromStr;
+
+use serde::Deserialize;
 
 use crate::action::Action;
 use crate::layout::Gaps;
@@ -8,6 +12,68 @@ use crate::layout::Gaps;
 pub struct Config {
     pub gaps: Gaps,
     pub bindings: Vec<(Action, KeyCombo)>,
+}
+
+impl Config {
+    pub fn load(path: &Path) -> Result<Config, String> {
+        if !path.exists() {
+            return Ok(Config::default());
+        }
+        let text = std::fs::read_to_string(path).map_err(|e| format!("read {path:?}: {e}"))?;
+        Config::parse(&text)
+    }
+
+    pub fn parse(text: &str) -> Result<Config, String> {
+        let wire: Wire = toml::from_str(text).map_err(|e| e.to_string())?;
+        let mut config = Config {
+            gaps: wire.gaps,
+            bindings: default_bindings(),
+        };
+        config.apply_keys(&wire.keys)?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn apply_keys(&mut self, keys: &BTreeMap<String, String>) -> Result<(), String> {
+        for (name, value) in keys {
+            let action = Action::from_config_key(name)
+                .ok_or_else(|| format!("[keys] unknown action {name:?}"))?;
+            let slot = self.bindings.iter().position(|(a, _)| *a == action);
+            if value.is_empty() {
+                if let Some(i) = slot {
+                    self.bindings.remove(i);
+                }
+            } else {
+                let combo = value
+                    .parse::<KeyCombo>()
+                    .map_err(|e| format!("[keys] {name} = {value:?}: {e}"))?;
+                match slot {
+                    Some(i) => self.bindings[i].1 = combo,
+                    None => self.bindings.push((action, combo)),
+                }
+            }
+        }
+        for (i, (a, combo)) in self.bindings.iter().enumerate() {
+            if let Some((b, _)) = self.bindings[i + 1..]
+                .iter()
+                .find(|(_, other)| other == combo)
+            {
+                return Err(format!(
+                    "[keys] {} and {} are both bound to {combo}",
+                    a.config_key(),
+                    b.config_key()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.gaps.outer < 0.0 || self.gaps.inner < 0.0 {
+            return Err("gaps must be >= 0".into());
+        }
+        Ok(())
+    }
 }
 
 impl Default for Config {
@@ -211,3 +277,12 @@ fn add_modifier(modifiers: &mut Modifiers, part: &str) -> Option<()> {
     }
     Some(())
 }
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct Wire {
+    gaps: Gaps,
+    keys: BTreeMap<String, String>,
+}
+
+pub const TEMPLATE: &[u8] = include_bytes!("../assets/config-template.toml");

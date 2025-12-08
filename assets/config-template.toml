@@ -1,0 +1,26 @@
+# Lattice configuration. Every table and key is optional; delete anything
+# to fall back to the built-in default. The file is hot-reloaded on save.
+
+[gaps]
+outer = 5            # screen edge <-> window, points
+inner = 5            # window <-> window at shared edges, points
+
+[keys]
+# Any action omitted keeps its default; "" unbinds it. Defaults:
+left-half = "ctrl+alt+left"
+right-half = "ctrl+alt+right"
+top-half = "ctrl+alt+up"
+bottom-half = "ctrl+alt+down"
+top-left-quarter = "ctrl+alt+u"
+top-right-quarter = "ctrl+alt+i"
+bottom-left-quarter = "ctrl+alt+j"
+bottom-right-quarter = "ctrl+alt+k"
+first-third = "ctrl+alt+d"
+center-third = "ctrl+alt+f"
+last-third = "ctrl+alt+g"
+first-two-thirds = "ctrl+alt+e"
+last-two-thirds = "ctrl+alt+t"
+maximize = "ctrl+alt+enter"
+almost-maximize = "ctrl+alt+shift+enter"
+center = "ctrl+alt+c"
+restore = "ctrl+alt+backspace"

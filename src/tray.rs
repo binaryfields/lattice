@@ -8,6 +8,8 @@ use crate::action::Action;
 use crate::config::{Config, KeyCombo};
 use crate::macos;
 
+pub const OPEN_CONFIG_ID: &str = "open-config";
+pub const RELOAD_CONFIG_ID: &str = "reload-config";
 pub const QUIT_ID: &str = "quit";
 pub const GRANT_ACCESS_ID: &str = "grant-access";
 pub const LOGIN_ID: &str = "login";
@@ -72,6 +74,7 @@ impl Tray {
 
 pub struct Status<'a> {
     pub trusted: bool,
+    pub config_error: Option<&'a str>,
     pub hotkey_failures: &'a [String],
 }
 
@@ -85,6 +88,11 @@ fn build_menu(config: &Config, status: &Status<'_>) -> Option<Menu> {
             None,
         );
         menu.append_items(&[&grant, &PredefinedMenuItem::separator()])
+            .ok()?;
+    }
+    if status.config_error.is_some() {
+        let flag = MenuItem::new("(!) Config error, keeping last good config", false, None);
+        menu.append_items(&[&flag, &PredefinedMenuItem::separator()])
             .ok()?;
     }
     if !status.hotkey_failures.is_empty() {
@@ -112,6 +120,9 @@ fn build_menu(config: &Config, status: &Status<'_>) -> Option<Menu> {
         None,
     );
     menu.append_items(&[
+        &PredefinedMenuItem::separator(),
+        &MenuItem::with_id(OPEN_CONFIG_ID, "Open Config", true, None),
+        &MenuItem::with_id(RELOAD_CONFIG_ID, "Reload Config", true, None),
         &PredefinedMenuItem::separator(),
         &login,
         &PredefinedMenuItem::separator(),
