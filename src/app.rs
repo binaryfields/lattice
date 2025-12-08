@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
@@ -32,7 +33,9 @@ pub fn run() {
         let _ = proxy.send_event(UserEvent::Menu(event));
     }));
 
-    let mut app = App::new();
+    let home = std::env::var_os("HOME").unwrap_or_default();
+    let config_path = PathBuf::from(home).join(".config/lattice/config.toml");
+    let mut app = App::new(config_path);
     if let Err(err) = event_loop.run_app(&mut app) {
         eprintln!("lattice: event loop error: {err}");
     }
@@ -46,6 +49,8 @@ pub enum UserEvent {
 struct App {
     engine: Engine,
     config: Config,
+    config_path: PathBuf,
+    config_error: Option<String>,
     hotkeys: Option<Hotkeys>,
     hotkey_failures: usize,
     tray: Option<tray::Tray>,
@@ -54,10 +59,12 @@ struct App {
 }
 
 impl App {
-    fn new() -> App {
+    fn new(config_path: PathBuf) -> App {
         App {
             engine: Engine::new(),
             config: Config::default(),
+            config_path,
+            config_error: None,
             hotkeys: None,
             hotkey_failures: 0,
             tray: None,
@@ -117,9 +124,24 @@ impl App {
                 "lattice: waiting for Accessibility permission (System Settings > Privacy & Security > Accessibility)"
             );
         }
+        self.load_config();
         self.hotkeys = Hotkeys::new();
         self.bind_hotkeys();
         self.tray = tray::Tray::new(&self.config, &self.status());
+    }
+
+    fn load_config(&mut self) {
+        match Config::load(&self.config_path) {
+            Ok(config) => {
+                self.engine.set_gaps(config.gaps);
+                self.config = config;
+                self.config_error = None;
+            }
+            Err(err) => {
+                eprintln!("lattice: config error, keeping last good config: {err}");
+                self.config_error = Some(err);
+            }
+        }
     }
 
     fn bind_hotkeys(&mut self) {
@@ -128,9 +150,10 @@ impl App {
         }
     }
 
-    fn status(&self) -> tray::Status {
+    fn status(&self) -> tray::Status<'_> {
         tray::Status {
             trusted: self.trusted,
+            config_error: self.config_error.as_deref(),
             hotkey_failures: self.hotkey_failures,
         }
     }
@@ -152,6 +175,8 @@ impl App {
 
     fn handle_menu(&mut self, event_loop: &ActiveEventLoop, id: &str) {
         match id {
+            tray::OPEN_CONFIG_ID => self.open_config(),
+            tray::RELOAD_CONFIG_ID => self.reload_config(),
             tray::GRANT_ACCESS_ID => macos::open(macos::ACCESSIBILITY_SETTINGS),
             tray::LOGIN_ID => {
                 macos::set_start_at_login(!macos::starts_at_login());
@@ -163,6 +188,27 @@ impl App {
                     self.perform(action);
                 }
             }
+        }
+    }
+
+    fn open_config(&self) {
+        if !self.config_path.exists() {
+            if let Some(dir) = self.config_path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Err(err) = std::fs::write(&self.config_path, crate::config::TEMPLATE) {
+                eprintln!("lattice: could not write config template: {err}");
+            }
+        }
+        macos::open(&self.config_path);
+    }
+
+    fn reload_config(&mut self) {
+        self.load_config();
+        self.bind_hotkeys();
+        self.update_tray();
+        if self.config_error.is_none() {
+            eprintln!("lattice: config reloaded");
         }
     }
 

@@ -17,6 +17,8 @@ const GROUP_STARTS: [Action; 4] = [
 ];
 
 pub const LOGIN_ID: &str = "login";
+pub const OPEN_CONFIG_ID: &str = "open-config";
+pub const RELOAD_CONFIG_ID: &str = "reload-config";
 pub const QUIT_ID: &str = "quit";
 
 pub struct Tray {
@@ -24,7 +26,7 @@ pub struct Tray {
 }
 
 impl Tray {
-    pub fn new(config: &Config, status: &Status) -> Option<Tray> {
+    pub fn new(config: &Config, status: &Status<'_>) -> Option<Tray> {
         let menu = build_menu(config, status)?;
         let icon = TrayIconBuilder::new()
             .with_icon(tray_icon())
@@ -37,19 +39,20 @@ impl Tray {
         Some(Tray { icon })
     }
 
-    pub fn update(&self, config: &Config, status: &Status) {
+    pub fn update(&self, config: &Config, status: &Status<'_>) {
         if let Some(menu) = build_menu(config, status) {
             self.icon.set_menu(Some(Box::new(menu)));
         }
     }
 }
 
-pub struct Status {
+pub struct Status<'a> {
     pub trusted: bool,
+    pub config_error: Option<&'a str>,
     pub hotkey_failures: usize,
 }
 
-fn build_menu(config: &Config, status: &Status) -> Option<Menu> {
+fn build_menu(config: &Config, status: &Status<'_>) -> Option<Menu> {
     let menu = Menu::new();
     let failures = format!("(!) {} hotkey(s) not registered", status.hotkey_failures);
     let warnings = [
@@ -61,6 +64,9 @@ fn build_menu(config: &Config, status: &Status) -> Option<Menu> {
                 None,
             )
         }),
+        status
+            .config_error
+            .map(|_| MenuItem::new("(!) Config error, keeping last good config", false, None)),
         (status.hotkey_failures > 0).then(|| MenuItem::new(&failures, false, None)),
     ];
     for warning in warnings.iter().flatten() {
@@ -81,6 +87,9 @@ fn build_menu(config: &Config, status: &Status) -> Option<Menu> {
         None,
     );
     menu.append_items(&[
+        &PredefinedMenuItem::separator(),
+        &MenuItem::with_id(OPEN_CONFIG_ID, "Open Config", true, None),
+        &MenuItem::with_id(RELOAD_CONFIG_ID, "Reload Config", true, None),
         &PredefinedMenuItem::separator(),
         &login,
         &PredefinedMenuItem::separator(),

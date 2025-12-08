@@ -1,9 +1,12 @@
+use serde::Deserialize;
+
 use crate::action::Action;
 use crate::geometry::Rect;
 
 const DEFAULT_GAP: f64 = 5.0;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Gaps {
     pub outer: f64,
     pub inner: f64,

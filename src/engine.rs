@@ -18,6 +18,10 @@ impl Engine {
         }
     }
 
+    pub fn set_gaps(&mut self, gaps: Gaps) {
+        self.gaps = gaps;
+    }
+
     pub fn place(&mut self, id: WindowId, action: Action, snapshot: &Snapshot) -> Option<Rect> {
         match action {
             Action::Restore => self.windows.remove(&id).map(|state| state.original),
