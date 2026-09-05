@@ -1,6 +1,6 @@
 [package]
 name = "lattice"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Keyboard-driven window snapping for macOS"
 license = "MIT"
@@ -11,6 +11,7 @@ objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-application-services = "0.3"
 objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
 objc2-service-management = "0.3"
 png = "0.17"
 serde = { version = "1", features = ["derive"] }

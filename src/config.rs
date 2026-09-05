@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use global_hotkey::hotkey::HotKey;
-use serde::Deserialize;
+use global_hotkey::hotkey::{HotKey, Modifiers};
+use serde::{Deserialize, Deserializer};
 use strum::IntoEnumIterator;
 
 use crate::action::Action;
@@ -13,6 +13,7 @@ pub const TEMPLATE: &[u8] = include_bytes!("../assets/config-template.toml");
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     pub gaps: Gaps,
+    pub sweep: Sweep,
     pub bindings: BTreeMap<Action, HotKey>,
 }
 
@@ -29,6 +30,7 @@ impl Config {
         let wire: Wire = toml::from_str(text).map_err(|e| e.to_string())?;
         let mut config = Config {
             gaps: wire.gaps,
+            sweep: wire.sweep,
             bindings: default_bindings(),
         };
         config.apply_keys(&wire.keys)?;
@@ -64,6 +66,12 @@ impl Config {
         if self.gaps.outer < 0.0 || self.gaps.inner < 0.0 {
             return Err("gaps must be >= 0".into());
         }
+        if self.sweep.distance <= 0.0 {
+            return Err("sweep.distance must be > 0".into());
+        }
+        if self.sweep.modifier.is_empty() {
+            return Err("sweep.modifier must name at least one modifier".into());
+        }
         Ok(())
     }
 
@@ -80,10 +88,30 @@ impl Default for Config {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Sweep {
+    pub enabled: bool,
+    pub distance: f64,
+    #[serde(deserialize_with = "deserialize_modifiers")]
+    pub modifier: Modifiers,
+}
+
+impl Default for Sweep {
+    fn default() -> Self {
+        Sweep {
+            enabled: true,
+            distance: 60.0,
+            modifier: Modifiers::CONTROL | Modifiers::SUPER,
+        }
+    }
+}
+
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct Wire {
     gaps: Gaps,
+    sweep: Sweep,
     keys: BTreeMap<String, String>,
 }
 
@@ -97,6 +125,24 @@ fn default_bindings() -> BTreeMap<Action, HotKey> {
             (a, combo)
         })
         .collect()
+}
+
+fn deserialize_modifiers<'de, D: Deserializer<'de>>(d: D) -> Result<Modifiers, D::Error> {
+    let s = String::deserialize(d)?;
+    let parts = s.split('+').map(str::trim).filter(|p| !p.is_empty());
+    parts
+        .map(modifier)
+        .try_fold(Modifiers::empty(), |all, one| Ok(all | one?))
+}
+
+fn modifier<E: serde::de::Error>(part: &str) -> Result<Modifiers, E> {
+    match part.to_ascii_lowercase().as_str() {
+        "ctrl" | "control" => Ok(Modifiers::CONTROL),
+        "alt" | "option" | "opt" => Ok(Modifiers::ALT),
+        "shift" => Ok(Modifiers::SHIFT),
+        "cmd" | "command" | "super" | "meta" => Ok(Modifiers::SUPER),
+        _ => Err(E::custom(format!("unknown modifier {part:?}"))),
+    }
 }
 
 #[cfg(test)]

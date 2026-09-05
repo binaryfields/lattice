@@ -27,9 +27,7 @@ impl Engine {
             Action::Restore => self.windows.remove(&id).map(|state| state.original),
             Action::NextDisplay | Action::PrevDisplay => self.move_display(id, action, snapshot),
             _ => {
-                let display = display::display_for(&snapshot.window, &snapshot.visible_frames)?;
-                let visible_frame = snapshot.visible_frames[display];
-                let target = layout::place(action, &snapshot.window, &visible_frame, self.gaps)?;
+                let target = self.preview(action, snapshot)?;
                 self.windows.entry(id).or_insert(WindowState {
                     original: snapshot.window,
                 });
@@ -66,6 +64,12 @@ impl Engine {
         });
         Some(target)
     }
+
+    pub fn preview(&self, action: Action, snapshot: &Snapshot) -> Option<Rect> {
+        let display = display::display_for(&snapshot.window, &snapshot.visible_frames)?;
+        let visible_frame = snapshot.visible_frames[display];
+        layout::place(action, &snapshot.window, &visible_frame, self.gaps)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -75,6 +79,14 @@ pub struct WindowId(pub u64);
 pub struct Snapshot {
     pub window: Rect,
     pub visible_frames: Vec<Rect>,
+}
+
+/// A window taken hold of: the handle that moves it, its identity, and its
+/// frame and the displays' as they were read together.
+pub struct Grab<W> {
+    pub window: W,
+    pub id: WindowId,
+    pub snapshot: Snapshot,
 }
 
 #[derive(Clone, Debug)]

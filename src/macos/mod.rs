@@ -4,9 +4,13 @@ use objc2_app_kit::NSScreen;
 use crate::geometry::Rect;
 
 pub use ax::*;
+pub use mouse::*;
+pub use overlay::*;
 pub use shell::*;
 
 mod ax;
+mod mouse;
+mod overlay;
 mod shell;
 
 pub fn visible_frames() -> Vec<Rect> {
