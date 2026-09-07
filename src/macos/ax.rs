@@ -54,12 +54,13 @@ impl AxWindow {
         err == AXError::Success && settable != 0
     }
 
-    pub fn set_frame(&self, frame: &Rect) -> Result<(), AXError> {
+    pub fn set_frame(&self, frame: &Rect) -> Result<Rect, AXError> {
         let origin = CGPoint::new(frame.x, frame.y);
         let size = CGSize::new(frame.width, frame.height);
         self.set_value("AXPosition", AXValueType::CGPoint, origin)?;
         self.set_value("AXSize", AXValueType::CGSize, size)?;
-        self.set_value("AXPosition", AXValueType::CGPoint, origin)
+        self.set_value("AXPosition", AXValueType::CGPoint, origin)?;
+        Ok(self.frame().unwrap_or(*frame))
     }
 
     fn set_value<T>(

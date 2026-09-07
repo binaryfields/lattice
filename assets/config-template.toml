@@ -4,6 +4,11 @@
 outer = 5            # screen edge <-> window, points
 inner = 5            # window <-> window at shared edges, points
 
+[drag]
+enabled = true
+edge = 8               # pt band along the screen edges (top maximizes)
+corner = 64            # pt square at the screen corners (quarters)
+
 [sweep]
 enabled = true
 distance = 60          # pt the cursor must travel before release snaps

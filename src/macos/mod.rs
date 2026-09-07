@@ -4,11 +4,13 @@ use objc2_app_kit::NSScreen;
 use crate::geometry::Rect;
 
 pub use ax::*;
+pub use mission_control::*;
 pub use mouse::*;
 pub use overlay::*;
 pub use shell::*;
 
 mod ax;
+mod mission_control;
 mod mouse;
 mod overlay;
 mod shell;

@@ -13,18 +13,22 @@ pub fn display_for(window: &Rect, visible_frames: &[Rect]) -> Option<usize> {
     if window.intersection_area(&visible_frames[best]) > 0.0 {
         return Some(best);
     }
-    let (wx, wy) = window.center();
+    let (x, y) = window.center();
+    display_at(x, y, visible_frames)
+}
+
+pub fn display_at(x: f64, y: f64, visible_frames: &[Rect]) -> Option<usize> {
     visible_frames
         .iter()
         .enumerate()
-        .min_by(|(_, a), (_, b)| {
-            let (ax, ay) = a.center();
-            let (bx, by) = b.center();
-            let da = (ax - wx).powi(2) + (ay - wy).powi(2);
-            let db = (bx - wx).powi(2) + (by - wy).powi(2);
-            da.total_cmp(&db)
-        })
+        .min_by(|(_, a), (_, b)| distance_squared(x, y, a).total_cmp(&distance_squared(x, y, b)))
         .map(|(i, _)| i)
+}
+
+fn distance_squared(x: f64, y: f64, frame: &Rect) -> f64 {
+    let dx = (frame.x - x).max(x - frame.max_x()).max(0.0);
+    let dy = (frame.y - y).max(y - frame.max_y()).max(0.0);
+    dx * dx + dy * dy
 }
 
 pub fn remap_between(window: &Rect, from: &Rect, to: &Rect) -> Rect {
@@ -57,6 +61,20 @@ mod tests {
     fn display_for_with_offscreen_window() {
         let above_right = Rect::new(1400.0, -5000.0, 200.0, 150.0);
         assert_eq!(display_for(&above_right, &[LEFT, RIGHT]), Some(1));
+    }
+
+    #[test]
+    fn display_at_inside_frame() {
+        assert_eq!(display_at(500.0, 400.0, &[LEFT, RIGHT]), Some(0));
+        assert_eq!(display_at(1500.0, 400.0, &[LEFT, RIGHT]), Some(1));
+    }
+
+    #[test]
+    fn display_at_off_every_frame() {
+        let narrow_right = Rect::new(1000.0, 0.0, 400.0, 300.0);
+        assert_eq!(display_at(1200.0, -40.0, &[LEFT, RIGHT]), Some(1));
+        assert_eq!(display_at(-30.0, 900.0, &[LEFT, RIGHT]), Some(0));
+        assert_eq!(display_at(990.0, -40.0, &[LEFT, narrow_right]), Some(0));
     }
 
     #[test]

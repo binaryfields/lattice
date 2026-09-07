@@ -10,24 +10,31 @@ use objc2_core_graphics::{
     CGEventTapProxy, CGEventType,
 };
 
-use crate::config::Sweep;
+use crate::config::{Drag, Sweep};
 
 const MIN_MOVE_DISTANCE: f64 = 2.0;
 
-pub struct SweepMonitor {
-    state: *mut SweepState,
+pub struct MouseMonitor {
+    state: *mut MouseState,
     source: CFRetained<CFRunLoopSource>,
 }
 
-impl SweepMonitor {
-    pub fn install(sweep: &Sweep, emit: Box<dyn Fn(SweepEvent)>) -> Option<SweepMonitor> {
-        let state = Box::into_raw(Box::new(SweepState {
+impl MouseMonitor {
+    pub fn install(
+        sweep: &Sweep,
+        drag: &Drag,
+        emit: Box<dyn Fn(MouseEvent)>,
+    ) -> Option<MouseMonitor> {
+        let state = Box::into_raw(Box::new(MouseState {
             tap: None,
             arm_flags: arm_flags(sweep),
-            armed_at: None,
+            drag_enabled: drag.enabled,
+            gesture: None,
             emit,
         }));
         let mask: CGEventMask = event_bit(CGEventType::MouseMoved)
+            | event_bit(CGEventType::LeftMouseDown)
+            | event_bit(CGEventType::LeftMouseUp)
             | event_bit(CGEventType::LeftMouseDragged)
             | event_bit(CGEventType::FlagsChanged);
         let tap = unsafe {
@@ -44,7 +51,7 @@ impl SweepMonitor {
             .as_deref()
             .and_then(|tap| CFMachPort::new_run_loop_source(None, Some(tap), 0));
         let Some((source, run_loop)) = source.zip(CFRunLoop::current()) else {
-            eprintln!("lattice: could not install the sweep monitor; sweep disabled");
+            eprintln!("lattice: could not install the mouse monitor; sweep and drag disabled");
             drop(unsafe { Box::from_raw(state) });
             return None;
         };
@@ -52,17 +59,18 @@ impl SweepMonitor {
             (*state).tap = tap;
             run_loop.add_source(Some(&source), kCFRunLoopCommonModes);
         }
-        Some(SweepMonitor { state, source })
+        Some(MouseMonitor { state, source })
     }
 
-    pub fn set_config(&mut self, sweep: &Sweep) {
+    pub fn set_config(&mut self, sweep: &Sweep, drag: &Drag) {
         let state = unsafe { &mut *self.state };
         state.arm_flags = arm_flags(sweep);
-        state.armed_at = None;
+        state.drag_enabled = drag.enabled;
+        state.gesture = None;
     }
 }
 
-impl Drop for SweepMonitor {
+impl Drop for MouseMonitor {
     fn drop(&mut self) {
         let state = unsafe { &*self.state };
         if let Some(tap) = &state.tap {
@@ -77,52 +85,83 @@ impl Drop for SweepMonitor {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SweepEvent {
-    Armed { x: f64, y: f64 },
+pub enum MouseEvent {
+    Sweep(Phase),
+    Drag(Phase),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Phase {
+    Began { x: f64, y: f64 },
     Moved { x: f64, y: f64 },
-    Released { x: f64, y: f64 },
+    Ended { x: f64, y: f64 },
     Cancelled,
 }
 
-struct SweepState {
+struct MouseState {
     tap: Option<CFRetained<CFMachPort>>,
     arm_flags: Option<CGEventFlags>,
-    armed_at: Option<(f64, f64)>,
-    emit: Box<dyn Fn(SweepEvent)>,
+    drag_enabled: bool,
+    gesture: Option<Gesture>,
+    emit: Box<dyn Fn(MouseEvent)>,
 }
 
-impl SweepState {
-    fn step(&mut self, input: Input, (x, y): (f64, f64)) -> Option<SweepEvent> {
+impl MouseState {
+    fn step(&mut self, input: Input, (x, y): (f64, f64)) -> Option<MouseEvent> {
         match input {
             Input::Flags(flags) => {
                 let held = self.arm_flags.is_some_and(|arm| flags.contains(arm));
-                match (held, self.armed_at.is_some()) {
-                    (true, false) => {
-                        self.armed_at = Some((x, y));
-                        Some(SweepEvent::Armed { x, y })
+                match (held, &self.gesture) {
+                    (true, None | Some(Gesture::Drag(_))) => {
+                        self.gesture = Some(Gesture::Sweep((x, y)));
+                        Some(MouseEvent::Sweep(Phase::Began { x, y }))
                     }
-                    (false, true) => {
-                        self.armed_at = None;
-                        Some(SweepEvent::Released { x, y })
+                    (false, Some(Gesture::Sweep(_))) => {
+                        self.gesture = None;
+                        Some(MouseEvent::Sweep(Phase::Ended { x, y }))
                     }
                     _ => None,
                 }
             }
+            Input::ButtonDown if self.drag_enabled && self.gesture.is_none() => {
+                self.gesture = Some(Gesture::Drag((x, y)));
+                Some(MouseEvent::Drag(Phase::Began { x, y }))
+            }
+            Input::ButtonUp if matches!(self.gesture, Some(Gesture::Drag(_))) => {
+                self.gesture = None;
+                Some(MouseEvent::Drag(Phase::Ended { x, y }))
+            }
             Input::Moved => {
-                let (lx, ly) = self.armed_at?;
-                if (x - lx).hypot(y - ly) < MIN_MOVE_DISTANCE {
+                let gesture = self.gesture.as_mut()?;
+                let (Gesture::Sweep(at) | Gesture::Drag(at)) = gesture;
+                if (x - at.0).hypot(y - at.1) < MIN_MOVE_DISTANCE {
                     return None;
                 }
-                self.armed_at = Some((x, y));
-                Some(SweepEvent::Moved { x, y })
+                *at = (x, y);
+                let moved = Phase::Moved { x, y };
+                Some(match gesture {
+                    Gesture::Sweep(_) => MouseEvent::Sweep(moved),
+                    Gesture::Drag(_) => MouseEvent::Drag(moved),
+                })
             }
-            Input::TapDisabled => self.armed_at.take().map(|_| SweepEvent::Cancelled),
+            Input::TapDisabled => match self.gesture.take()? {
+                Gesture::Sweep(_) => Some(MouseEvent::Sweep(Phase::Cancelled)),
+                Gesture::Drag(_) => Some(MouseEvent::Drag(Phase::Cancelled)),
+            },
+            Input::ButtonDown | Input::ButtonUp => None,
         }
     }
 }
 
+enum Gesture {
+    Sweep((f64, f64)),
+    Drag((f64, f64)),
+}
+
 enum Input {
     Flags(CGEventFlags),
+    ButtonDown,
+    ButtonUp,
     Moved,
     TapDisabled,
 }
@@ -133,7 +172,7 @@ unsafe extern "C-unwind" fn tap_callback(
     event: NonNull<CGEvent>,
     user_info: *mut c_void,
 ) -> *mut CGEvent {
-    let state = unsafe { &mut *user_info.cast::<SweepState>() };
+    let state = unsafe { &mut *user_info.cast::<MouseState>() };
     let cg_event = unsafe { event.as_ref() };
     let input = match event_type {
         CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => {
@@ -143,6 +182,8 @@ unsafe extern "C-unwind" fn tap_callback(
             Input::TapDisabled
         }
         CGEventType::FlagsChanged => Input::Flags(CGEvent::flags(Some(cg_event))),
+        CGEventType::LeftMouseDown => Input::ButtonDown,
+        CGEventType::LeftMouseUp => Input::ButtonUp,
         CGEventType::MouseMoved | CGEventType::LeftMouseDragged => Input::Moved,
         _ => return event.as_ptr(),
     };

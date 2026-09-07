@@ -13,6 +13,7 @@ pub const TEMPLATE: &[u8] = include_bytes!("../assets/config-template.toml");
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     pub gaps: Gaps,
+    pub drag: Drag,
     pub sweep: Sweep,
     pub bindings: BTreeMap<Action, HotKey>,
 }
@@ -30,6 +31,7 @@ impl Config {
         let wire: Wire = toml::from_str(text).map_err(|e| e.to_string())?;
         let mut config = Config {
             gaps: wire.gaps,
+            drag: wire.drag,
             sweep: wire.sweep,
             bindings: default_bindings(),
         };
@@ -66,6 +68,9 @@ impl Config {
         if self.gaps.outer < 0.0 || self.gaps.inner < 0.0 {
             return Err("gaps must be >= 0".into());
         }
+        if self.drag.edge <= 0.0 || self.drag.corner <= 0.0 {
+            return Err("drag.edge and drag.corner must be > 0".into());
+        }
         if self.sweep.distance <= 0.0 {
             return Err("sweep.distance must be > 0".into());
         }
@@ -85,6 +90,24 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config::parse("").expect("an empty config parses")
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Drag {
+    pub enabled: bool,
+    pub edge: f64,
+    pub corner: f64,
+}
+
+impl Default for Drag {
+    fn default() -> Self {
+        Drag {
+            enabled: true,
+            edge: 8.0,
+            corner: 64.0,
+        }
     }
 }
 
@@ -111,6 +134,7 @@ impl Default for Sweep {
 #[serde(default, deny_unknown_fields)]
 struct Wire {
     gaps: Gaps,
+    drag: Drag,
     sweep: Sweep,
     keys: BTreeMap<String, String>,
 }

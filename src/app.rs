@@ -10,13 +10,17 @@ use winit::window::WindowId as WinitWindowId;
 
 use crate::action::Action;
 use crate::config::Config;
+use crate::drag;
 use crate::engine::{Engine, Grab, Snapshot};
 use crate::hotkey::Hotkeys;
-use crate::macos::{self, AxWindow, SweepEvent};
+use crate::macos::{self, AxWindow, MouseEvent, Phase};
 use crate::sweep;
 use crate::tray;
 
 const POLL: Duration = Duration::from_secs(2);
+const MISSION_CONTROL_INTERVAL: Duration = Duration::from_millis(100);
+const SETTLE_INTERVAL: Duration = Duration::from_millis(50);
+const SETTLE_ATTEMPTS: u32 = 6;
 
 pub fn run() {
     let mut builder = EventLoop::<UserEvent>::with_user_event();
@@ -45,7 +49,7 @@ pub fn run() {
 pub enum UserEvent {
     Hotkey(GlobalHotKeyEvent),
     Menu(MenuEvent),
-    Sweep(SweepEvent),
+    Mouse(MouseEvent),
 }
 
 struct App {
@@ -56,8 +60,11 @@ struct App {
     hotkeys: Option<Hotkeys>,
     hotkey_failures: usize,
     tray: Option<tray::Tray>,
-    sweep_monitor: Option<macos::SweepMonitor>,
+    monitor: Option<macos::MouseMonitor>,
     sweep: Option<sweep::Session<macos::AxWindow>>,
+    drag: Option<drag::Session<macos::AxWindow>>,
+    watch: Option<Watch>,
+    dropped: Option<Dropped>,
     overlay: macos::Overlay,
     proxy: EventLoopProxy<UserEvent>,
     trusted: bool,
@@ -74,8 +81,11 @@ impl App {
             hotkeys: None,
             hotkey_failures: 0,
             tray: None,
-            sweep_monitor: None,
+            monitor: None,
             sweep: None,
+            drag: None,
+            watch: None,
+            dropped: None,
             overlay: macos::Overlay::new(),
             proxy,
             trusted: false,
@@ -107,7 +117,7 @@ impl ApplicationHandler<UserEvent> for App {
                 let id = menu.id().0.clone();
                 self.handle_menu(event_loop, &id);
             }
-            UserEvent::Sweep(event) => self.handle_sweep(event),
+            UserEvent::Mouse(event) => self.handle_mouse(event),
         }
     }
 
@@ -123,7 +133,19 @@ impl ApplicationHandler<UserEvent> for App {
         if self.initialized {
             self.refresh_trust();
         }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + POLL));
+        if self
+            .dropped
+            .as_ref()
+            .is_some_and(|dropped| dropped.due <= Instant::now())
+        {
+            self.settle_drop();
+        }
+        let poll = Instant::now() + POLL;
+        let wake = self
+            .dropped
+            .as_ref()
+            .map_or(poll, |dropped| dropped.due.min(poll));
+        event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
     }
 }
 
@@ -142,7 +164,7 @@ impl App {
         self.bind_hotkeys();
         self.tray = tray::Tray::new(&self.config, &self.status());
         if self.trusted {
-            self.install_sweep();
+            self.install_monitor();
         }
     }
 
@@ -174,12 +196,13 @@ impl App {
         }
     }
 
-    fn install_sweep(&mut self) {
+    fn install_monitor(&mut self) {
         let proxy = self.proxy.clone();
-        self.sweep_monitor = macos::SweepMonitor::install(
+        self.monitor = macos::MouseMonitor::install(
             &self.config.sweep,
+            &self.config.drag,
             Box::new(move |event| {
-                let _ = proxy.send_event(UserEvent::Sweep(event));
+                let _ = proxy.send_event(UserEvent::Mouse(event));
             }),
         );
     }
@@ -189,8 +212,8 @@ impl App {
             self.trusted = true;
             eprintln!("lattice: Accessibility permission granted");
             self.update_tray();
-            if self.sweep_monitor.is_none() {
-                self.install_sweep();
+            if self.monitor.is_none() {
+                self.install_monitor();
             }
         }
         self.trusted
@@ -238,10 +261,11 @@ impl App {
         self.load_config();
         self.bind_hotkeys();
         self.update_tray();
-        if let Some(monitor) = self.sweep_monitor.as_mut() {
-            monitor.set_config(&self.config.sweep);
+        if let Some(monitor) = self.monitor.as_mut() {
+            monitor.set_config(&self.config.sweep, &self.config.drag);
         }
         self.cancel_sweep();
+        self.cancel_drag();
         if self.config_error.is_none() {
             eprintln!("lattice: config reloaded");
         }
@@ -276,19 +300,24 @@ impl App {
         let Some(target) = self.engine.place(grab.id, action, &grab.snapshot) else {
             return;
         };
-        if let Err(err) = grab.window.set_frame(&target) {
-            eprintln!("lattice: failed to apply frame for {action:?}: {err:?}");
+        match grab.window.set_frame(&target) {
+            Ok(actual) => self.engine.applied(grab.id, actual),
+            Err(err) => eprintln!("lattice: failed to apply frame for {action:?}: {err:?}"),
         }
     }
 
     // ---- Mouse ----
 
-    fn handle_sweep(&mut self, event: SweepEvent) {
+    fn handle_mouse(&mut self, event: MouseEvent) {
         match event {
-            SweepEvent::Armed { x, y } => self.arm_sweep(x, y),
-            SweepEvent::Moved { x, y } => self.preview_sweep(x, y),
-            SweepEvent::Released { x, y } => self.commit_sweep(x, y),
-            SweepEvent::Cancelled => self.cancel_sweep(),
+            MouseEvent::Sweep(Phase::Began { x, y }) => self.arm_sweep(x, y),
+            MouseEvent::Sweep(Phase::Moved { x, y }) => self.preview_sweep(x, y),
+            MouseEvent::Sweep(Phase::Ended { x, y }) => self.commit_sweep(x, y),
+            MouseEvent::Sweep(Phase::Cancelled) => self.cancel_sweep(),
+            MouseEvent::Drag(Phase::Began { x, y }) => self.begin_drag(x, y),
+            MouseEvent::Drag(Phase::Moved { x, y }) => self.track_drag(x, y),
+            MouseEvent::Drag(Phase::Ended { x, y }) => self.commit_drag(x, y),
+            MouseEvent::Drag(Phase::Cancelled) => self.cancel_drag(),
         }
     }
 
@@ -296,6 +325,7 @@ impl App {
 
     fn arm_sweep(&mut self, x: f64, y: f64) {
         self.sweep = None;
+        self.cancel_drag();
         let window = macos::window_at(x, y).filter(AxWindow::is_resizable);
         let Some(grab) = window.and_then(|window| grab(window).ok()) else {
             return;
@@ -327,6 +357,162 @@ impl App {
         self.sweep = None;
         self.overlay.hide();
     }
+
+    // ---- Drag ----
+
+    fn begin_drag(&mut self, x: f64, y: f64) {
+        self.drag = Some(drag::Session::begin((x, y)));
+    }
+
+    fn track_drag(&mut self, x: f64, y: f64) {
+        let Some(session) = self.drag.as_ref() else {
+            return;
+        };
+        match session.probe((x, y)) {
+            drag::Probe::Window => self.capture_drag(x, y),
+            drag::Probe::Frame => self.confirm_drag(x, y),
+            drag::Probe::Idle => {}
+        }
+        self.yield_to_mission_control();
+        if let Some(session) = &self.drag {
+            self.overlay
+                .set_outline(session.track((x, y), &self.engine, &self.config.drag));
+        }
+    }
+
+    fn commit_drag(&mut self, x: f64, y: f64) {
+        self.overlay.set_outline(None);
+        let watch = self.watch.take();
+        let Some(session) = self.drag.take() else {
+            return;
+        };
+        // A drop made while Mission Control is up is its to handle: the
+        // window is on its way to another desktop, or back where it was.
+        if watch.is_some_and(|watch| watch.mission_control.is_open()) {
+            return;
+        }
+        self.dropped = Some(Dropped {
+            session,
+            cursor: (x, y),
+            attempts: 0,
+            due: Instant::now(),
+        });
+        self.settle_drop();
+    }
+
+    fn cancel_drag(&mut self) {
+        self.drag = None;
+        self.watch = None;
+        self.dropped = None;
+        self.overlay.set_outline(None);
+    }
+
+    fn capture_drag(&mut self, x: f64, y: f64) {
+        let Some(session) = self.drag.as_mut() else {
+            return;
+        };
+        // Hit-test the press point before the current one: capture waits for
+        // 12 pt of travel, and a straight-up drag has by then carried the
+        // cursor clear of the title bar onto whatever sits behind it, whereas
+        // the press point stays on the window the drag actually grabbed.
+        let captured = [session.start(), (x, y)].into_iter().find_map(|(x, y)| {
+            let window = macos::window_at(x, y).filter(AxWindow::is_resizable)?;
+            grab(window).ok()
+        });
+        let Some(grab) = captured else {
+            session.abandon();
+            return;
+        };
+        session.capture(grab, (x, y));
+        self.watch = Some(Watch {
+            mission_control: macos::MissionControl::new(),
+            polled: Instant::now(),
+        });
+    }
+
+    fn confirm_drag(&mut self, x: f64, y: f64) {
+        let Some(session) = self.drag.as_mut() else {
+            return;
+        };
+        let Some(frame) = session.window().and_then(macos::AxWindow::frame) else {
+            session.abandon();
+            return;
+        };
+        session.confirm(&frame, (x, y));
+    }
+
+    /// Yields the drag to Mission Control. Dragging a window to the top edge
+    /// is also macOS's gesture for moving it to another desktop: Mission
+    /// Control opens within about 100 ms of the cursor touching the edge, too
+    /// soon to tell from a drag that means to maximize, and its drop targets,
+    /// the Spaces Bar and the "+" for a new desktop, sit inside the top zones.
+    /// So a session that sees Mission Control open goes inert, its outline
+    /// hides, and the drop is left to macOS. The window list is asked at most
+    /// every `MISSION_CONTROL_INTERVAL`.
+    fn yield_to_mission_control(&mut self) {
+        let now = Instant::now();
+        let Some(watch) = self.watch.as_mut() else {
+            return;
+        };
+        if now < watch.polled + MISSION_CONTROL_INTERVAL {
+            return;
+        }
+        watch.polled = now;
+        if !watch.mission_control.is_open() {
+            return;
+        }
+        self.watch = None;
+        if let Some(session) = self.drag.as_mut() {
+            session.abandon();
+        }
+    }
+
+    /// Lands a released drag. The dropped window's frame trails the cursor
+    /// (see `drag::Session::confirm`), so a release the session has not yet
+    /// judged is re-read every `SETTLE_INTERVAL` until the frame catches up
+    /// or `SETTLE_ATTEMPTS` run out; a flick faster than the lag still lands.
+    fn settle_drop(&mut self) {
+        let Some(mut dropped) = self.dropped.take() else {
+            return;
+        };
+        let Some(frame) = dropped.session.window().and_then(macos::AxWindow::frame) else {
+            return;
+        };
+        dropped.session.confirm(&frame, dropped.cursor);
+        if dropped.session.undecided() && dropped.attempts < SETTLE_ATTEMPTS {
+            dropped.attempts += 1;
+            dropped.due = Instant::now() + SETTLE_INTERVAL;
+            self.dropped = Some(dropped);
+            return;
+        }
+        let cursor = dropped.cursor;
+        match dropped.session.release(cursor, &frame, &self.config.drag) {
+            Some(drag::Landing::Snap(grab, action)) => self.apply(&grab, action),
+            Some(drag::Landing::Unsnap(grab)) => {
+                let Some(restored) = self.engine.unsnap(grab.id, cursor, &frame) else {
+                    return;
+                };
+                if let Err(err) = grab.window.set_frame(&restored) {
+                    eprintln!("lattice: failed to restore the unsnapped frame: {err:?}");
+                }
+            }
+            None => {}
+        }
+    }
+}
+
+/// Mission Control lookout for the drag in progress, posted when the drag
+/// captured its window.
+struct Watch {
+    mission_control: macos::MissionControl,
+    polled: Instant,
+}
+
+struct Dropped {
+    session: drag::Session<macos::AxWindow>,
+    cursor: (f64, f64),
+    attempts: u32,
+    due: Instant,
 }
 
 fn grab(window: AxWindow) -> Result<Grab<AxWindow>, &'static str> {
