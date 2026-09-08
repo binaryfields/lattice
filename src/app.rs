@@ -67,6 +67,7 @@ struct App {
     dropped: Option<Dropped>,
     overlay: macos::Overlay,
     proxy: EventLoopProxy<UserEvent>,
+    poll_due: Instant,
     trusted: bool,
     initialized: bool,
 }
@@ -88,6 +89,7 @@ impl App {
             dropped: None,
             overlay: macos::Overlay::new(),
             proxy,
+            poll_due: Instant::now(),
             trusted: false,
             initialized: false,
         }
@@ -129,23 +131,24 @@ impl ApplicationHandler<UserEvent> for App {
     ) {
     }
 
+    /// Runs after every pass of the run loop, so it does no I/O, and the
+    /// wake instant it hands winit is a stored deadline: recomputing it each
+    /// pass would make winit re-arm its timer every time.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
         if self.initialized {
             self.refresh_trust();
         }
-        if self
-            .dropped
-            .as_ref()
-            .is_some_and(|dropped| dropped.due <= Instant::now())
-        {
+        if self.dropped.as_ref().is_some_and(|d| d.due <= now) {
             self.settle_drop();
         }
-        let poll = Instant::now() + POLL;
-        let wake = self
-            .dropped
-            .as_ref()
-            .map_or(poll, |dropped| dropped.due.min(poll));
-        event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
+        if self.poll_due <= now {
+            self.poll_due = now + POLL;
+        }
+        let poll = (!self.trusted).then_some(self.poll_due);
+        let settle = self.dropped.as_ref().map(|dropped| dropped.due);
+        let wake = poll.into_iter().chain(settle).min();
+        event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
     }
 }
 
